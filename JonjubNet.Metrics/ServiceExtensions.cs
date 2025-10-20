@@ -1,6 +1,7 @@
 using JonjubNet.Metrics.Configuration;
 using JonjubNet.Metrics.Interfaces;
 using JonjubNet.Metrics.Services;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Prometheus;
@@ -27,7 +28,7 @@ namespace JonjubNet.Metrics
             services.AddScoped<IMetricsService, MetricsService>();
 
             // Registrar middleware de métricas HTTP
-            services.AddScoped<IMetricsMiddleware, HttpMetricsMiddleware>();
+            services.AddScoped<HttpMetricsMiddleware>();
 
             // Configurar Prometheus si está habilitado
             var metricsConfig = configuration.GetSection(MetricsConfiguration.SectionName).Get<MetricsConfiguration>();
@@ -56,7 +57,7 @@ namespace JonjubNet.Metrics
             services.AddScoped<IMetricsService, MetricsService>();
 
             // Registrar middleware de métricas HTTP
-            services.AddScoped<IMetricsMiddleware, HttpMetricsMiddleware>();
+            services.AddScoped<HttpMetricsMiddleware>();
 
             // Configurar Prometheus si está habilitado
             var metricsConfig = configuration.GetSection(MetricsConfiguration.SectionName).Get<MetricsConfiguration>();

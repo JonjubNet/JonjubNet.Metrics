@@ -10,7 +10,7 @@ namespace JonjubNet.Metrics.Services
     /// <summary>
     /// Middleware para capturar métricas HTTP automáticamente
     /// </summary>
-    public class HttpMetricsMiddleware : IMetricsMiddleware
+    public class HttpMetricsMiddleware
     {
         private readonly RequestDelegate _next;
         private readonly IMetricsService _metricsService;
