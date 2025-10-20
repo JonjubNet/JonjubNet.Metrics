@@ -25,7 +25,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Icono para paquete NuGet
 
 ### Características Técnicas
-- Basado en .NET 8.0 para máximo rendimiento
+- Basado en .NET 10.0 para máximo rendimiento
 - Integración con Prometheus.Client para métricas estándar
 - Configuración via IConfiguration con validación
 - Inyección de dependencias nativa con ServiceExtensions

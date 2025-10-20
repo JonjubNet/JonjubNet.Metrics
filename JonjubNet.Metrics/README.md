@@ -16,7 +16,7 @@ Biblioteca de métricas para aplicaciones .NET con soporte para contadores, gaug
 - **Configuración Flexible**: Configuración completa via appsettings.json
 - **Etiquetas Dinámicas**: Soporte para etiquetas personalizadas
 - **Alto Rendimiento**: Basado en Prometheus.Client para máximo rendimiento
-- **.NET 8.0**: Compatible con las últimas versiones de .NET
+- **.NET 10.0**: Compatible con las últimas versiones de .NET
 
 ## 📦 Instalación
 
