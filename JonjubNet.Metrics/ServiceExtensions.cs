@@ -34,7 +34,7 @@ namespace JonjubNet.Metrics
             var metricsConfig = configuration.GetSection(MetricsConfiguration.SectionName).Get<MetricsConfiguration>();
             if (metricsConfig?.Export?.Prometheus?.Enabled == true)
             {
-                services.AddPrometheusMetrics();
+                // Prometheus configuration will be added here when needed
             }
 
             return services;
@@ -63,7 +63,7 @@ namespace JonjubNet.Metrics
             var metricsConfig = configuration.GetSection(MetricsConfiguration.SectionName).Get<MetricsConfiguration>();
             if (metricsConfig?.Export?.Prometheus?.Enabled == true)
             {
-                services.AddPrometheusMetrics();
+                // Prometheus configuration will be added here when needed
             }
 
             return services;

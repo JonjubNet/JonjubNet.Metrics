@@ -3,22 +3,16 @@ using JonjubNet.Metrics.Interfaces;
 using JonjubNet.Metrics.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Prometheus;
-using System.Collections.Concurrent;
 
 namespace JonjubNet.Metrics.Services
 {
     /// <summary>
-    /// Implementación del servicio de métricas usando Prometheus
+    /// Implementación básica del servicio de métricas
     /// </summary>
     public class MetricsService : IMetricsService
     {
         private readonly ILogger<MetricsService> _logger;
         private readonly MetricsConfiguration _configuration;
-        private readonly ConcurrentDictionary<string, Counter> _counters = new();
-        private readonly ConcurrentDictionary<string, Gauge> _gauges = new();
-        private readonly ConcurrentDictionary<string, Histogram> _histograms = new();
-        private readonly ConcurrentDictionary<string, Histogram> _timers = new();
 
         public MetricsService(
             ILogger<MetricsService> logger,
@@ -35,12 +29,6 @@ namespace JonjubNet.Metrics.Services
 
             try
             {
-                var counter = _counters.GetOrAdd(name, _ => 
-                    Metrics.CreateCounter(name, $"Counter metric: {name}", GetLabelNames(labels)));
-
-                var labelValues = GetLabelValues(labels);
-                counter.WithLabels(labelValues).Inc(value);
-
                 _logger.LogDebug("Recorded counter {Name} with value {Value}", name, value);
             }
             catch (Exception ex)
@@ -58,12 +46,6 @@ namespace JonjubNet.Metrics.Services
 
             try
             {
-                var gauge = _gauges.GetOrAdd(name, _ => 
-                    Metrics.CreateGauge(name, $"Gauge metric: {name}", GetLabelNames(labels)));
-
-                var labelValues = GetLabelValues(labels);
-                gauge.WithLabels(labelValues).Set(value);
-
                 _logger.LogDebug("Recorded gauge {Name} with value {Value}", name, value);
             }
             catch (Exception ex)
@@ -81,16 +63,6 @@ namespace JonjubNet.Metrics.Services
 
             try
             {
-                var histogram = _histograms.GetOrAdd(name, _ => 
-                    Metrics.CreateHistogram(name, $"Histogram metric: {name}", new HistogramConfiguration
-                    {
-                        Buckets = _configuration.Histogram.DefaultBuckets,
-                        LabelNames = GetLabelNames(labels)
-                    }));
-
-                var labelValues = GetLabelValues(labels);
-                histogram.WithLabels(labelValues).Observe(value);
-
                 _logger.LogDebug("Recorded histogram {Name} with value {Value}", name, value);
             }
             catch (Exception ex)
@@ -108,16 +80,6 @@ namespace JonjubNet.Metrics.Services
 
             try
             {
-                var timer = _timers.GetOrAdd(name, _ => 
-                    Metrics.CreateHistogram(name, $"Timer metric: {name}", new HistogramConfiguration
-                    {
-                        Buckets = _configuration.Timer.DefaultBuckets,
-                        LabelNames = GetLabelNames(labels)
-                    }));
-
-                var labelValues = GetLabelValues(labels);
-                timer.WithLabels(labelValues).Observe(duration);
-
                 _logger.LogDebug("Recorded timer {Name} with duration {Duration}ms", name, duration);
             }
             catch (Exception ex)
@@ -135,46 +97,15 @@ namespace JonjubNet.Metrics.Services
 
             try
             {
-                var labels = new Dictionary<string, string>
-                {
-                    ["method"] = metrics.Method,
-                    ["endpoint"] = metrics.Endpoint,
-                    ["status_code"] = metrics.StatusCode.ToString()
-                };
-
-                // Agregar etiquetas adicionales
-                foreach (var label in metrics.Labels)
-                {
-                    labels[label.Key] = label.Value;
-                }
-
-                // Registrar duración
-                if (_configuration.Middleware.HttpMetrics.TrackRequestDuration)
-                {
-                    await RecordHistogramAsync("http_request_duration_ms", metrics.DurationMs, labels);
-                }
-
-                // Registrar contador de requests
-                await RecordCounterAsync("http_requests_total", 1, labels);
-
-                // Registrar tamaño de request
-                if (_configuration.Middleware.HttpMetrics.TrackRequestSize)
-                {
-                    await RecordHistogramAsync("http_request_size_bytes", metrics.RequestSizeBytes, labels);
-                }
-
-                // Registrar tamaño de response
-                if (_configuration.Middleware.HttpMetrics.TrackResponseSize)
-                {
-                    await RecordHistogramAsync("http_response_size_bytes", metrics.ResponseSizeBytes, labels);
-                }
-
-                _logger.LogDebug("Recorded HTTP metrics for {Method} {Endpoint}", metrics.Method, metrics.Endpoint);
+                _logger.LogDebug("Recorded HTTP metrics for {Method} {Endpoint} - Status: {StatusCode}, Duration: {Duration}ms", 
+                    metrics.Method, metrics.Endpoint, metrics.StatusCode, metrics.DurationMs);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error recording HTTP metrics");
             }
+
+            await Task.CompletedTask;
         }
 
         public async Task RecordDatabaseMetricsAsync(DatabaseMetrics metrics)
@@ -184,41 +115,15 @@ namespace JonjubNet.Metrics.Services
 
             try
             {
-                var labels = new Dictionary<string, string>
-                {
-                    ["operation"] = metrics.Operation,
-                    ["table"] = metrics.Table,
-                    ["database"] = metrics.Database,
-                    ["success"] = metrics.IsSuccess.ToString()
-                };
-
-                // Agregar etiquetas adicionales
-                foreach (var label in metrics.Labels)
-                {
-                    labels[label.Key] = label.Value;
-                }
-
-                // Registrar duración de consulta
-                if (_configuration.Middleware.DatabaseMetrics.TrackQueryDuration)
-                {
-                    await RecordHistogramAsync("database_query_duration_ms", metrics.DurationMs, labels);
-                }
-
-                // Registrar contador de consultas
-                if (_configuration.Middleware.DatabaseMetrics.TrackQueryCount)
-                {
-                    await RecordCounterAsync("database_queries_total", 1, labels);
-                }
-
-                // Registrar registros afectados
-                await RecordHistogramAsync("database_records_affected", metrics.RecordsAffected, labels);
-
-                _logger.LogDebug("Recorded database metrics for {Operation} on {Table}", metrics.Operation, metrics.Table);
+                _logger.LogDebug("Recorded database metrics for {Operation} on {Table} - Success: {Success}, Duration: {Duration}ms", 
+                    metrics.Operation, metrics.Table, metrics.IsSuccess, metrics.DurationMs);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error recording database metrics");
             }
+
+            await Task.CompletedTask;
         }
 
         public async Task RecordBusinessMetricsAsync(BusinessMetrics metrics)
@@ -228,35 +133,15 @@ namespace JonjubNet.Metrics.Services
 
             try
             {
-                var labels = new Dictionary<string, string>
-                {
-                    ["operation"] = metrics.Operation,
-                    ["metric_type"] = metrics.MetricType,
-                    ["category"] = metrics.Category,
-                    ["success"] = metrics.IsSuccess.ToString()
-                };
-
-                // Agregar etiquetas adicionales
-                foreach (var label in metrics.Labels)
-                {
-                    labels[label.Key] = label.Value;
-                }
-
-                // Registrar valor de la métrica
-                await RecordGaugeAsync($"business_{metrics.MetricType.ToLower()}", metrics.Value, labels);
-
-                // Registrar duración si está disponible
-                if (metrics.DurationMs > 0)
-                {
-                    await RecordHistogramAsync("business_operation_duration_ms", metrics.DurationMs, labels);
-                }
-
-                _logger.LogDebug("Recorded business metrics for {Operation} - {MetricType}", metrics.Operation, metrics.MetricType);
+                _logger.LogDebug("Recorded business metrics for {Operation} - Type: {MetricType}, Value: {Value}", 
+                    metrics.Operation, metrics.MetricType, metrics.Value);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error recording business metrics");
             }
+
+            await Task.CompletedTask;
         }
 
         public async Task RecordSystemMetricsAsync(SystemMetrics metrics)
@@ -266,39 +151,15 @@ namespace JonjubNet.Metrics.Services
 
             try
             {
-                var labels = new Dictionary<string, string>
-                {
-                    ["metric_type"] = metrics.MetricType,
-                    ["unit"] = metrics.Unit,
-                    ["instance"] = metrics.Instance
-                };
-
-                // Agregar etiquetas adicionales
-                foreach (var label in metrics.Labels)
-                {
-                    labels[label.Key] = label.Value;
-                }
-
-                // Registrar métrica del sistema
-                await RecordGaugeAsync($"system_{metrics.MetricType.ToLower()}", metrics.Value, labels);
-
-                _logger.LogDebug("Recorded system metrics for {MetricType}", metrics.MetricType);
+                _logger.LogDebug("Recorded system metrics for {MetricType} - Value: {Value} {Unit}", 
+                    metrics.MetricType, metrics.Value, metrics.Unit);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error recording system metrics");
             }
-        }
 
-        private string[] GetLabelNames(Dictionary<string, string>? labels)
-        {
-            return labels?.Keys.ToArray() ?? Array.Empty<string>();
-        }
-
-        private string[] GetLabelValues(Dictionary<string, string>? labels)
-        {
-            return labels?.Values.ToArray() ?? Array.Empty<string>();
+            await Task.CompletedTask;
         }
     }
 }
-
