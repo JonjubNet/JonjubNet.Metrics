@@ -27,16 +27,16 @@ jobs:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
     - name: Restore dependencies
-      run: dotnet restore JonjubNet.Metrics/JonjubNet.Metrics.csproj
+      run: dotnet restore JonjubNet.Metrics.slnx
 
     - name: Build
-      run: dotnet build JonjubNet.Metrics/JonjubNet.Metrics.csproj --configuration Release --no-restore
+      run: dotnet build JonjubNet.Metrics.slnx --configuration Release --no-restore
 
     - name: Test
-      run: dotnet test JonjubNet.Metrics/JonjubNet.Metrics.csproj --configuration Release --no-build --verbosity normal
+      run: dotnet test JonjubNet.Metrics.slnx --configuration Release --no-build --verbosity normal
 
     - name: Pack
-      run: dotnet pack JonjubNet.Metrics/JonjubNet.Metrics.csproj --configuration Release --no-build --output ./packages
+      run: dotnet pack Presentation/JonjubNet.Metrics/JonjubNet.Metrics.csproj --configuration Release --no-build --output ./packages
 
     - name: Upload packages
       uses: actions/upload-artifact@v4
