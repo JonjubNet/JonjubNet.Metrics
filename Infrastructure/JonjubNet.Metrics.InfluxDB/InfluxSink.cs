@@ -1,0 +1,321 @@
+using System.Net.Http.Json;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.IO.Compression;
+using JonjubNet.Metrics.Core;
+using JonjubNet.Metrics.Core.Interfaces;
+using JonjubNet.Metrics.Core.Utils;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using JonjubNet.Metrics.Shared.Security;
+
+namespace JonjubNet.Metrics.InfluxDB
+{
+    /// <summary>
+    /// Sink de métricas para InfluxDB
+    /// </summary>
+    public class InfluxSink : IMetricsSink
+    {
+        private readonly InfluxOptions _options;
+        private readonly ILogger<InfluxSink>? _logger;
+        private readonly HttpClient _httpClient;
+        private readonly EncryptionService? _encryptionService;
+        private readonly bool _encryptInTransit;
+
+        public string Name => "InfluxDB";
+        public bool IsEnabled => _options.Enabled;
+
+        public InfluxSink(
+            IOptions<InfluxOptions> options,
+            ILogger<InfluxSink>? logger = null,
+            HttpClient? httpClient = null,
+            EncryptionService? encryptionService = null,
+            SecureHttpClientFactory? secureHttpClientFactory = null,
+            bool encryptInTransit = false,
+            bool enableTls = true)
+        {
+            _options = options.Value;
+            _logger = logger;
+            _encryptionService = encryptionService;
+            _encryptInTransit = encryptInTransit;
+            
+            // Usar SecureHttpClientFactory si TLS está habilitado y está disponible
+            if (enableTls && secureHttpClientFactory != null && !string.IsNullOrEmpty(_options.Url))
+            {
+                _httpClient = secureHttpClientFactory.CreateSecureClient(_options.Url);
+            }
+            else
+            {
+                _httpClient = httpClient ?? new HttpClient();
+                if (!string.IsNullOrEmpty(_options.Url))
+                {
+                    _httpClient.BaseAddress = new Uri(_options.Url);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(_options.Token))
+            {
+                _httpClient.DefaultRequestHeaders.Add("Authorization", $"Token {_options.Token}");
+            }
+        }
+
+        /// <summary>
+        /// Exporta métricas desde el Registry (método principal optimizado)
+        /// </summary>
+        public async ValueTask ExportFromRegistryAsync(MetricRegistry registry, CancellationToken cancellationToken = default)
+        {
+            if (!_options.Enabled)
+                return;
+
+            try
+            {
+                var lineProtocol = FormatRegistryAsLineProtocol(registry);
+                if (string.IsNullOrEmpty(lineProtocol))
+                    return;
+
+                var url = $"{_options.Url}/api/v2/write?org={Uri.EscapeDataString(_options.Organization ?? "default")}&bucket={Uri.EscapeDataString(_options.Bucket)}";
+                
+                var lineProtocolBytes = Encoding.UTF8.GetBytes(lineProtocol);
+                
+                // Encriptación en tránsito si está habilitada
+                if (_encryptInTransit && _encryptionService != null)
+                {
+                    lineProtocolBytes = _encryptionService.Encrypt(lineProtocolBytes);
+                    _logger?.LogDebug("Metrics encrypted for transit to InfluxDB");
+                }
+                
+                HttpContent content;
+
+                if (_options.EnableCompression && lineProtocolBytes.Length > 1024)
+                {
+                    using var ms = new MemoryStream();
+                    using (var gzip = new GZipStream(ms, CompressionLevel.Fastest))
+                    {
+                        await gzip.WriteAsync(lineProtocolBytes, cancellationToken);
+                    }
+                    var compressed = ms.ToArray();
+                    content = new ByteArrayContent(compressed);
+                    content.Headers.ContentEncoding.Add("gzip");
+                    content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+                    if (_encryptInTransit)
+                    {
+                        content.Headers.Add("X-Encrypted", "true");
+                    }
+                }
+                else
+                {
+                    content = new ByteArrayContent(lineProtocolBytes);
+                    content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+                    if (_encryptInTransit)
+                    {
+                        content.Headers.Add("X-Encrypted", "true");
+                    }
+                    content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+                }
+
+                var response = await _httpClient.PostAsync(url, content, cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                    _logger?.LogWarning("InfluxDB export failed with status {StatusCode}: {Error}", 
+                        response.StatusCode, errorContent);
+                }
+                else
+                {
+                    _logger?.LogDebug("Exported metrics to InfluxDB");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Error exporting metrics to InfluxDB");
+            }
+        }
+
+        private string FormatRegistryAsLineProtocol(MetricRegistry registry)
+        {
+            var sb = new StringBuilder(4096); // Pre-allocate capacity
+            var timestamp = ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeSeconds();
+
+            // Convertir Counters
+            foreach (var counter in registry.GetAllCounters().Values)
+            {
+                foreach (var (key, value) in counter.GetAllValues())
+                {
+                    var tags = ParseKey(key);
+                    sb.Append(SanitizeMeasurement(counter.Name));
+                    
+                    if (tags.Count > 0)
+                    {
+                        foreach (var kvp in tags)
+                        {
+                            sb.Append(',').Append(SanitizeTag(kvp.Key)).Append('=').Append(SanitizeTag(kvp.Value));
+                        }
+                    }
+                    
+                    sb.Append(" value=").Append(value).Append(' ').Append(timestamp).Append('\n');
+                }
+            }
+
+            // Convertir Gauges
+            foreach (var gauge in registry.GetAllGauges().Values)
+            {
+                foreach (var (key, value) in gauge.GetAllValues())
+                {
+                    var tags = ParseKey(key);
+                    sb.Append(SanitizeMeasurement(gauge.Name));
+                    
+                    if (tags.Count > 0)
+                    {
+                        foreach (var kvp in tags)
+                        {
+                            sb.Append(',').Append(SanitizeTag(kvp.Key)).Append('=').Append(SanitizeTag(kvp.Value));
+                        }
+                    }
+                    
+                    sb.Append(" value=").Append(value).Append(' ').Append(timestamp).Append('\n');
+                }
+            }
+
+            // Similar para Histograms...
+
+            // Remove trailing newline
+            if (sb.Length > 0 && sb[sb.Length - 1] == '\n')
+            {
+                sb.Length--;
+            }
+            
+            return sb.ToString();
+        }
+
+        private Dictionary<string, string> ParseKey(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+                return new Dictionary<string, string>();
+
+            var result = new Dictionary<string, string>();
+            var pairs = key.Split(',');
+            foreach (var pair in pairs)
+            {
+                var parts = pair.Split('=');
+                if (parts.Length == 2)
+                {
+                    result[parts[0]] = parts[1];
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Exporta métricas desde una lista de puntos (DEPRECATED)
+        /// </summary>
+        [Obsolete("Use ExportFromRegistryAsync instead")]
+        public async ValueTask ExportAsync(IReadOnlyList<MetricPoint> points, CancellationToken cancellationToken = default)
+        {
+            if (!_options.Enabled)
+                return;
+
+            try
+            {
+                var lineProtocol = FormatAsLineProtocol(points);
+                if (string.IsNullOrEmpty(lineProtocol))
+                    return;
+
+                var url = $"{_options.Url}/api/v2/write?org={Uri.EscapeDataString(_options.Organization ?? "default")}&bucket={Uri.EscapeDataString(_options.Bucket)}";
+                
+                var lineProtocolBytes = Encoding.UTF8.GetBytes(lineProtocol);
+                HttpContent content;
+
+                // Comprimir si está habilitado y el payload es grande
+                if (_options.EnableCompression && lineProtocolBytes.Length > 1024)
+                {
+                    using var ms = new MemoryStream();
+                    using (var gzip = new GZipStream(ms, CompressionLevel.Fastest))
+                    {
+                        await gzip.WriteAsync(lineProtocolBytes, cancellationToken);
+                    }
+                    var compressed = ms.ToArray();
+                    content = new ByteArrayContent(compressed);
+                    content.Headers.ContentEncoding.Add("gzip");
+                    content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+                }
+                else
+                {
+                    content = new ByteArrayContent(lineProtocolBytes);
+                    content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+                }
+
+                var response = await _httpClient.PostAsync(url, content, cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                    _logger?.LogWarning("InfluxDB export failed with status {StatusCode}: {Error}", 
+                        response.StatusCode, errorContent);
+                }
+                else
+                {
+                    _logger?.LogDebug("Exported {Count} metrics to InfluxDB", points.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Error exporting metrics to InfluxDB");
+                // Don't throw - metrics should not break the application
+            }
+        }
+
+        private string FormatAsLineProtocol(IReadOnlyList<MetricPoint> points)
+        {
+            // Usar StringBuilder para evitar allocations intermedias
+            var sb = new StringBuilder(points.Count * 64); // Estimación: ~64 chars por línea
+            
+            var first = true;
+            foreach (var point in points)
+            {
+                if (!first)
+                    sb.Append('\n');
+                
+                // Measurement name
+                sb.Append(SanitizeMeasurement(point.Name));
+                
+                // Tags
+                if (point.Tags != null && point.Tags.Count > 0)
+                {
+                    sb.Append(',');
+                    var tagFirst = true;
+                    foreach (var kvp in point.Tags)
+                    {
+                        if (!tagFirst)
+                            sb.Append(',');
+                        sb.Append(SanitizeTag(kvp.Key));
+                        sb.Append('=');
+                        sb.Append(SanitizeTag(kvp.Value));
+                        tagFirst = false;
+                    }
+                }
+                
+                // Value and timestamp
+                sb.Append(" value=");
+                sb.Append(point.Value);
+                sb.Append(' ');
+                sb.Append(((DateTimeOffset)point.Timestamp).ToUnixTimeSeconds());
+                
+                first = false;
+            }
+
+            return sb.ToString();
+        }
+
+        private static string SanitizeMeasurement(string value)
+        {
+            return value.Replace(",", "\\,").Replace(" ", "\\ ");
+        }
+
+        private static string SanitizeTag(string value)
+        {
+            return value.Replace(",", "\\,").Replace("=", "\\=").Replace(" ", "\\ ");
+        }
+    }
+}
