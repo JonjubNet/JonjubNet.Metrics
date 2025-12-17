@@ -1,5 +1,7 @@
 <Solution>
-  <Folder Name="/src/" />
+  <Folder Name="/src/">
+    <Project Path="WebApplication1/WebApplication1.csproj" Id="997fa958-de03-4842-9b9e-244f72fc476d" />
+  </Folder>
   <Folder Name="/src/Core/">
     <Project Path="Core/JonjubNet.Metrics.Core/JonjubNet.Metrics.Core.csproj" />
   </Folder>
