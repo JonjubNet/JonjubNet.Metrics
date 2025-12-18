@@ -8,7 +8,7 @@
     
     <!-- NuGet Package Properties -->
     <PackageId>JonjubNet.Metrics</PackageId>
-    <Version>1.0.9</Version>
+    <Version>1.0.10</Version>
     <Authors>JonjubNet</Authors>
     <Company>JonjubNet</Company>
     <Description>Biblioteca de métricas para aplicaciones .NET con soporte para contadores, gauges, histogramas y timers, integración con Prometheus y exportación a múltiples formatos.</Description>
@@ -48,21 +48,27 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Configurar ProjectReference para incluir ensamblados en el paquete -->
-    <!-- Sin PrivateAssets, los ensamblados se incluirán automáticamente en el paquete -->
+    <!-- Configurar ProjectReference para incluir ensamblados en el paquete sin crear dependencias -->
+    <!-- PrivateAssets="All" evita que se creen dependencias de paquetes -->
+    <!-- Los ensamblados se incluyen físicamente mediante el target IncludeProjectReferencesInPackage -->
     <ProjectReference Include="..\..\Core\JonjubNet.Metrics.Core\JonjubNet.Metrics.Core.csproj">
+      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.Shared\JonjubNet.Metrics.Shared.csproj">
+      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.Prometheus\JonjubNet.Metrics.Prometheus.csproj">
+      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.OpenTelemetry\JonjubNet.Metrics.OpenTelemetry.csproj">
+      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.InfluxDB\JonjubNet.Metrics.InfluxDB.csproj">
+      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
