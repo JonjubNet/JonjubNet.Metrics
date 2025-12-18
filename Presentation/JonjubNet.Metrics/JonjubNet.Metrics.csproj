@@ -8,7 +8,7 @@
     
     <!-- NuGet Package Properties -->
     <PackageId>JonjubNet.Metrics</PackageId>
-    <Version>1.0.12</Version>
+    <Version>1.0.13</Version>
     <Authors>JonjubNet</Authors>
     <Company>JonjubNet</Company>
     <Description>Biblioteca de métricas para aplicaciones .NET con soporte para contadores, gauges, histogramas y timers, integración con Prometheus y exportación a múltiples formatos.</Description>
@@ -118,6 +118,27 @@
       <TfmSpecificBuildOutput Include="@(_ExistingDlls)" />
       <TfmSpecificBuildOutput Include="@(_ExistingPdbs)" Condition="'$(IncludeSymbols)' == 'true'" />
     </ItemGroup>
+  </Target>
+  
+  <!-- Target CRÍTICO: Agregar referencias explícitas al paquete después de crearlo -->
+  <Target Name="AddExplicitReferencesToPackage" AfterTargets="Pack">
+    <PropertyGroup>
+      <_ScriptPath>$(MSBuildThisFileDirectory)AddReferencesToPackage.ps1</_ScriptPath>
+      <_PackageOutputPath Condition="'$(PackageOutputPath)' == ''">$(OutputPath)</_PackageOutputPath>
+    </PropertyGroup>
+    
+    <ItemGroup>
+      <_AllPackageFiles Include="$(OutputPath)$(PackageId).*.nupkg" />
+      <_AllPackageFiles Include="$(_PackageOutputPath)$(PackageId).*.nupkg" Condition="'$(_PackageOutputPath)' != ''" />
+      <_AllPackageFiles Include="$(PackageOutputAbsolutePath)$(PackageId).*.nupkg" Condition="'$(PackageOutputAbsolutePath)' != ''" />
+    </ItemGroup>
+    
+    <Exec 
+      Condition="'@(_AllPackageFiles)' != '' AND Exists('$(_ScriptPath)')"
+      Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(_ScriptPath)&quot; -PackageFile &quot;%(_AllPackageFiles.Identity)&quot; -TargetFramework &quot;$(TargetFramework)&quot;"
+      ContinueOnError="false"
+      StandardOutputImportance="normal"
+      StandardErrorImportance="high" />
   </Target>
 
 </Project>
