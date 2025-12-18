@@ -8,7 +8,7 @@
     
     <!-- NuGet Package Properties -->
     <PackageId>JonjubNet.Metrics</PackageId>
-    <Version>1.0.7</Version>
+    <Version>1.0.8</Version>
     <Authors>JonjubNet</Authors>
     <Company>JonjubNet</Company>
     <Description>Biblioteca de métricas para aplicaciones .NET con soporte para contadores, gauges, histogramas y timers, integración con Prometheus y exportación a múltiples formatos.</Description>
@@ -30,7 +30,7 @@
     <NoWarn>$(NoWarn);1591</NoWarn>
     
     <!-- IMPORTANTE: Incluir ensamblados de proyectos referenciados en el paquete -->
-    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
+    <!-- Se maneja con targets separados para build y no-build -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -83,9 +83,32 @@
   </ItemGroup>
 
   <!-- Target para incluir ensamblados de proyectos referenciados en el paquete -->
-  <Target Name="CopyProjectReferencesToPackage" DependsOnTargets="ResolveReferences">
+  <!-- Funciona tanto con build como con no-build -->
+  <Target Name="CopyProjectReferencesToPackage" BeforeTargets="_GetPackageFiles" Condition="'$(NoBuild)' != 'true'">
+    <!-- Cuando se hace build normal, usar ReferenceCopyLocalPaths -->
     <ItemGroup>
       <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths-&gt;WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
+    </ItemGroup>
+  </Target>
+  
+  <!-- Target alternativo para no-build: incluir archivos ya compilados -->
+  <Target Name="CopyProjectReferencesToPackageNoBuild" BeforeTargets="_GetPackageFiles" Condition="'$(NoBuild)' == 'true'">
+    <ItemGroup>
+      <!-- Incluir DLLs de proyectos referenciados desde sus carpetas de output -->
+      <_ProjectRefDlls Include="@(ProjectReference->'%(RootDir)%(Directory)bin\$(Configuration)\$(TargetFramework)\%(Filename).dll')" />
+      <_ProjectRefPdbs Include="@(ProjectReference->'%(RootDir)%(Directory)bin\$(Configuration)\$(TargetFramework)\%(Filename).pdb')" Condition="'$(IncludeSymbols)' == 'true'" />
+    </ItemGroup>
+    
+    <!-- Filtrar solo los archivos que existen -->
+    <ItemGroup>
+      <_ExistingDlls Include="@(_ProjectRefDlls)" Condition="Exists('%(Identity)')" />
+      <_ExistingPdbs Include="@(_ProjectRefPdbs)" Condition="Exists('%(Identity)')" />
+    </ItemGroup>
+    
+    <!-- Incluir en el paquete -->
+    <ItemGroup>
+      <BuildOutputInPackage Include="@(_ExistingDlls)" TargetPath="lib/$(TargetFramework)/%(Filename)%(Extension)" />
+      <BuildOutputInPackage Include="@(_ExistingPdbs)" TargetPath="lib/$(TargetFramework)/%(Filename)%(Extension)" Condition="'$(IncludeSymbols)' == 'true'" />
     </ItemGroup>
   </Target>
 

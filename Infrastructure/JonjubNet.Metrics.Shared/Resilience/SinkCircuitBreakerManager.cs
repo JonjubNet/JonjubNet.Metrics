@@ -110,7 +110,7 @@ namespace JonjubNet.Metrics.Shared.Resilience
             {
                 return await circuitBreaker.ExecuteAsync(operation);
             }
-            catch (CircuitBreakerOpenException ex)
+            catch (CircuitBreakerOpenException)
             {
                 _logger?.LogWarning(
                     "Circuit breaker is open for sink {SinkName}. Operation skipped. State: {State}",

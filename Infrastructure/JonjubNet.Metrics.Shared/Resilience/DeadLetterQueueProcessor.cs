@@ -81,25 +81,35 @@ namespace JonjubNet.Metrics.Shared.Resilience
             {
                 try
                 {
-                    var sink = _sinks.FirstOrDefault(s => s.Name == failedMetric.SinkName && s.IsEnabled);
+                    if (failedMetric == null)
+                    {
+                        continue;
+                    }
+
+                    var sinkName = failedMetric.SinkName;
+                    var sink = _sinks.FirstOrDefault(s => s.Name == sinkName && s.IsEnabled);
                     if (sink == null)
                     {
+                        var metricName = failedMetric.MetricPoint.Name;
                         _logger?.LogWarning("Sink {SinkName} not found or disabled, skipping metric {MetricName}",
-                            failedMetric.SinkName, failedMetric.MetricPoint.Name);
+                            sinkName, metricName);
                         failedCount++;
                         continue;
                     }
 
                     // Intentar reexportar la métrica
                     // Optimizado: pre-allocar capacidad para lista de un elemento
-                    var metricPoints = new List<MetricPoint>(1) { failedMetric.MetricPoint };
+                    var metricPoint = failedMetric.MetricPoint;
+                    var metricPoints = new List<MetricPoint>(1) { metricPoint };
 
                     if (_retryPolicy != null)
                     {
                         var result = await _retryPolicy.ExecuteWithResultAsync<bool>(
                             async () =>
                             {
+#pragma warning disable CS0618 // Type or member is obsolete - ExportAsync is needed for DLQ individual metric export
                                 await sink.ExportAsync(metricPoints, cancellationToken);
+#pragma warning restore CS0618
                                 return true;
                             },
                             cancellationToken);
@@ -108,7 +118,7 @@ namespace JonjubNet.Metrics.Shared.Resilience
                         {
                             successCount++;
                             _logger?.LogDebug("Successfully re-exported metric {MetricName} to {SinkName}",
-                                failedMetric.MetricPoint.Name, failedMetric.SinkName);
+                                metricPoint.Name, sinkName);
                         }
                         else
                         {
@@ -139,7 +149,7 @@ namespace JonjubNet.Metrics.Shared.Resilience
                                 newMetadata));
                             failedCount++;
                             _logger?.LogWarning("Failed to re-export metric {MetricName} to {SinkName} after retry",
-                                failedMetric.MetricPoint.Name, failedMetric.SinkName);
+                                metricPoint.Name, sinkName);
                         }
                     }
                     else
@@ -147,10 +157,12 @@ namespace JonjubNet.Metrics.Shared.Resilience
                         // Sin retry policy, intentar directamente
                         try
                         {
+#pragma warning disable CS0618 // Type or member is obsolete - ExportAsync is needed for DLQ individual metric export
                             await sink.ExportAsync(metricPoints, cancellationToken);
+#pragma warning restore CS0618
                             successCount++;
                             _logger?.LogDebug("Successfully re-exported metric {MetricName} to {SinkName}",
-                                failedMetric.MetricPoint.Name, failedMetric.SinkName);
+                                metricPoint.Name, sinkName);
                             
                             // Retornar metadata al pool cuando se procesa exitosamente
                             if (failedMetric.Metadata != null)
@@ -187,7 +199,7 @@ namespace JonjubNet.Metrics.Shared.Resilience
                                 newMetadata));
                             failedCount++;
                             _logger?.LogWarning(ex, "Failed to re-export metric {MetricName} to {SinkName}",
-                                failedMetric.MetricPoint.Name, failedMetric.SinkName);
+                                metricPoint.Name, sinkName);
                         }
                     }
 
@@ -195,8 +207,20 @@ namespace JonjubNet.Metrics.Shared.Resilience
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Error processing failed metric {MetricName}",
-                        failedMetric?.MetricPoint.Name ?? "unknown");
+                    var metricName = "unknown";
+                    try
+                    {
+                        if (failedMetric != null)
+                        {
+                            metricName = failedMetric.MetricPoint.Name;
+                        }
+                    }
+                    catch
+                    {
+                        // Ignorar si falla al acceder al nombre
+                    }
+                    
+                    _logger?.LogError(ex, "Error processing failed metric {MetricName}", metricName);
                     failedCount++;
                 }
             }
