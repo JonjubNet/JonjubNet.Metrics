@@ -26,10 +26,14 @@ jobs:
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Setup PowerShell Core
-      uses: actions/setup-powershell@v1
-      with:
-        pwsh-version: 'latest'
+    - name: Install PowerShell Core
+      run: |
+        curl -L -o /tmp/powershell.tar.gz https://github.com/PowerShell/PowerShell/releases/download/v7.4.0/powershell-7.4.0-linux-x64.tar.gz
+        mkdir -p /opt/microsoft/powershell/7
+        tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/7
+        chmod +x /opt/microsoft/powershell/7/pwsh
+        sudo ln -sf /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh || echo "pwsh installed"
+        pwsh --version
 
     - name: Restore dependencies
       run: dotnet restore JonjubNet.Metrics.slnx

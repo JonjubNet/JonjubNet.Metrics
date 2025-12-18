@@ -8,7 +8,7 @@
     
     <!-- NuGet Package Properties -->
     <PackageId>JonjubNet.Metrics</PackageId>
-    <Version>1.0.14</Version>
+    <Version>1.0.16</Version>
     <Authors>JonjubNet</Authors>
     <Company>JonjubNet</Company>
     <Description>Biblioteca de métricas para aplicaciones .NET con soporte para contadores, gauges, histogramas y timers, integración con Prometheus y exportación a múltiples formatos.</Description>
@@ -131,12 +131,16 @@
       <_PowerShellExe Condition="'$(OS)' != 'Windows_NT'">pwsh</_PowerShellExe>
     </PropertyGroup>
     
+    <!-- Buscar paquetes en todas las ubicaciones posibles -->
     <ItemGroup>
       <_AllPackageFiles Include="$(OutputPath)$(PackageId).*.nupkg" />
       <_AllPackageFiles Include="$(_PackageOutputPath)$(PackageId).*.nupkg" Condition="'$(_PackageOutputPath)' != ''" />
       <_AllPackageFiles Include="$(PackageOutputAbsolutePath)$(PackageId).*.nupkg" Condition="'$(PackageOutputAbsolutePath)' != ''" />
+      <!-- También buscar en la ruta de salida del pack cuando se usa output -->
+      <_AllPackageFiles Include="$(MSBuildProjectDirectory)\..\..\packages\$(PackageId).*.nupkg" Condition="Exists('$(MSBuildProjectDirectory)\..\..\packages')" />
     </ItemGroup>
     
+    <!-- Ejecutar el script para cada paquete encontrado -->
     <Exec 
       Condition="'@(_AllPackageFiles)' != '' AND Exists('$(_ScriptPath)')"
       Command="$(_PowerShellExe) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(_ScriptPath)&quot; -PackageFile &quot;%(_AllPackageFiles.Identity)&quot; -TargetFramework &quot;$(TargetFramework)&quot;"
