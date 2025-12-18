@@ -487,117 +487,529 @@ Usa ejemplos prácticos relacionados con operaciones de base de datos, llamadas 
 
 ---
 
-## Nivel 3 - Múltiples Sinks
+## Nivel 3 - Múltiples Sinks (Configuración Genérica)
+
+### 🎯 Concepto Fundamental: El Código NO Cambia
+
+**IMPORTANTE:** El componente está diseñado para que **NO importe qué repositorio/sink uses** (Prometheus, InfluxDB, Kafka, StatsD, OpenTelemetry). 
+
+**El código de tu servicio es IDÉNTICO para todos los sinks.** Solo cambia la configuración en `appsettings.json`.
+
+### Arquitectura: Registry Central
+
+```
+Tu Servicio → IMetricsClient → MetricRegistry → MetricFlushScheduler → Sinks Habilitados
+                (Código único)    (Punto central)    (Exporta automáticamente)
+```
+
+**Flujo:**
+1. Tu código escribe métricas usando `IMetricsClient` (código idéntico siempre)
+2. Las métricas se almacenan en `MetricRegistry` (punto central)
+3. `MetricFlushScheduler` exporta automáticamente a **todos los sinks habilitados** en paralelo
+4. Los sinks leen del Registry independientemente
 
 ### Objetivo
-Configurar múltiples exportadores (sinks): OpenTelemetry, InfluxDB, StatsD y Kafka.
+Configurar múltiples exportadores (sinks) mediante **solo configuración**. **NO requiere cambios de código** - solo ajustar `appsettings.json`.
 
-### Paso 3.1: Configurar OpenTelemetry (OTLP)
+### Paso 3.1: Código del Servicio (IDÉNTICO para Todos los Sinks)
 
-**appsettings.json:**
+**Este código funciona con Prometheus, InfluxDB, Kafka, StatsD, OpenTelemetry - TODOS:**
+
+```csharp
+// Tu servicio - CÓDIGO IDÉNTICO para todos los sinks
+public class OrderService
+{
+    private readonly IMetricsClient _metrics;
+    
+    public OrderService(IMetricsClient metrics)
+    {
+        _metrics = metrics; // Mismo código siempre
+    }
+    
+    public void CreateOrder(Order order)
+    {
+        // Este código es IDÉNTICO para Prometheus, InfluxDB, Kafka, etc.
+        _metrics.Increment("orders_created_total", 1.0, new Dictionary<string, string>
+        {
+            { "status", "success" },
+            { "region", order.Region }
+        });
+    }
+    
+    public async Task ProcessOrderAsync(Order order)
+    {
+        // Timer - mismo código para todos los sinks
+        using (_metrics.StartTimer("order_processing_duration_seconds", new Dictionary<string, string>
+        {
+            { "order_type", order.Type }
+        }))
+        {
+            await ValidateOrderAsync(order);
+            await ChargePaymentAsync(order);
+            await FulfillOrderAsync(order);
+        }
+    }
+}
+```
+
+**Registro en Program.cs (UNA SOLA VEZ):**
+
+```csharp
+// Program.cs - Registra TODOS los sinks automáticamente
+builder.Services.AddJonjubNetMetrics(builder.Configuration);
+```
+
+**¡Eso es todo!** No necesitas código adicional para cambiar de sink.
+
+---
+
+## Tabla de Referencia Rápida - Todos los Sinks
+
+| Sink | Estado | Sección Config | Parámetros Clave | Protocolo | Código Requerido |
+|------|--------|----------------|------------------|-----------|------------------|
+| **Prometheus** | ✅ Completo | `Prometheus` | `Enabled`, `Endpoint` | HTTP (texto) | ❌ Solo config |
+| **OpenTelemetry** | ✅ Completo | `OpenTelemetry` | `Enabled`, `Endpoint`, `Protocol` | HTTP JSON/Protobuf | ❌ Solo config |
+| **InfluxDB** | ✅ Completo | `InfluxDB` | `Enabled`, `Url`, `Token`, `Bucket` | HTTP (Line Protocol) | ❌ Solo config |
+| **StatsD** | ✅ Completo | `StatsD` | `Enabled`, `Host`, `Port` | UDP | ❌ Solo config |
+| **Kafka** | ⚠️ Básico* | `Kafka` | `Enabled`, `Broker`, `Topic` | Kafka | ⚠️ Requiere librería |
+
+*Kafka requiere integración con Confluent.Kafka para producción (actualmente usa logging fallback)
+
+---
+
+## Integración 1: Prometheus
+
+### Estado de Implementación
+✅ **Completo y funcional** - Formatter y exporter implementados. Performance optimizado (~5-15ns overhead).
+
+### Configuración Básica
 
 ```json
 {
   "Metrics": {
-    "Enabled": true,
+    "Prometheus": {
+      "Enabled": true,
+      "Endpoint": "/metrics"
+    }
+  }
+}
+```
+
+### Configuración Completa con Todos los Parámetros
+
+```json
+{
+  "Metrics": {
+    "Prometheus": {
+      "Enabled": true,
+      "Endpoint": "/metrics",
+      "Port": null
+    }
+  }
+}
+```
+
+**Parámetros:**
+- `Enabled` (bool): Habilitar/deshabilitar Prometheus (default: `true`)
+- `Endpoint` (string): Ruta del endpoint (default: `"/metrics"`)
+- `Port` (int?, opcional): Puerto separado si se especifica (default: `null`)
+
+### Verificación
+
+1. Iniciar la aplicación
+2. Navegar a: `http://localhost:5000/metrics`
+3. Deberías ver métricas en formato Prometheus:
+
+```
+# HELP orders_created_total Total de órdenes creadas
+# TYPE orders_created_total counter
+orders_created_total{status="success",region="us-east"} 5.0
+```
+
+### Ejemplo de Uso en Producción
+
+```json
+{
+  "Metrics": {
+    "Prometheus": {
+      "Enabled": true,
+      "Endpoint": "/metrics"
+    }
+  }
+}
+```
+
+**Nota:** Prometheus es el único sink que expone un endpoint HTTP. Los demás exportan a backends externos.
+
+---
+
+## Integración 2: OpenTelemetry (OTLP)
+
+### Estado de Implementación
+✅ **Completo y funcional** - Conversión completa del Registry a formato OTLP. Soporta encriptación en tránsito y compresión.
+
+### Configuración Básica
+
+```json
+{
+  "Metrics": {
+    "OpenTelemetry": {
+      "Enabled": true,
+      "Endpoint": "http://localhost:4318/v1/metrics",
+      "Protocol": "HttpJson"
+    }
+  }
+}
+```
+
+### Configuración Completa con Todos los Parámetros
+
+```json
+{
+  "Metrics": {
+    "OpenTelemetry": {
+      "Enabled": true,
+      "Endpoint": "http://otel-collector:4318/v1/metrics",
+      "Protocol": "HttpJson",
+      "EnableCompression": true,
+      "TimeoutSeconds": 30
+    },
+    "Encryption": {
+      "EnableInTransit": true,
+      "EnableTls": true,
+      "ValidateCertificates": true
+    }
+  }
+}
+```
+
+**Parámetros:**
+- `Enabled` (bool): Habilitar/deshabilitar OpenTelemetry (default: `true`)
+- `Endpoint` (string): URL del OTel Collector (ej: `"http://otel:4318/v1/metrics"`)
+- `Protocol` (enum): `HttpJson`, `HttpProtobuf`, o `Grpc` (default: `HttpJson`)
+- `EnableCompression` (bool): Habilitar compresión GZip (default: `true`)
+- `TimeoutSeconds` (int): Timeout de conexión en segundos (default: `30`)
+
+**Encriptación (opcional):**
+- `Encryption.EnableInTransit`: Encriptar payloads antes de enviar (default: `false`)
+- `Encryption.EnableTls`: Usar HTTPS/TLS (default: `true`)
+- `Encryption.ValidateCertificates`: Validar certificados SSL (default: `true`)
+
+### Configuración para Desarrollo
+
+```json
+{
+  "Metrics": {
     "OpenTelemetry": {
       "Enabled": true,
       "Endpoint": "http://localhost:4318/v1/metrics",
       "Protocol": "HttpJson",
-      "Headers": {
-        "Authorization": "Bearer your-token"
-      }
+      "EnableCompression": false,
+      "TimeoutSeconds": 10
+    },
+    "Encryption": {
+      "EnableInTransit": false,
+      "EnableTls": false
     }
   }
 }
 ```
 
-**Registro en Program.cs (si no está automático):**
-
-```csharp
-using JonjubNet.Metrics.OpenTelemetry;
-
-builder.Services.AddJonjubNetMetrics(builder.Configuration, options =>
-{
-    // La configuración se lee de appsettings.json
-    // Pero puedes personalizar aquí si es necesario
-});
-```
-
-### Paso 3.2: Configurar InfluxDB
-
-**appsettings.json:**
+### Configuración para Producción
 
 ```json
 {
   "Metrics": {
-    "Enabled": true,
+    "OpenTelemetry": {
+      "Enabled": true,
+      "Endpoint": "https://otel-collector.prod:4318/v1/metrics",
+      "Protocol": "HttpJson",
+      "EnableCompression": true,
+      "TimeoutSeconds": 30
+    },
+    "Encryption": {
+      "EnableInTransit": true,
+      "EnableTls": true,
+      "ValidateCertificates": true
+    }
+  }
+}
+```
+
+### Verificación
+
+1. Configurar OTel Collector para recibir en el endpoint especificado
+2. Verificar logs de la aplicación: `"Exporting metrics to OpenTelemetry"`
+3. Verificar en OTel Collector que recibe métricas
+4. Consultar métricas en el backend configurado (ej: Jaeger, Grafana)
+
+---
+
+## Integración 3: InfluxDB
+
+### Estado de Implementación
+✅ **Completo y funcional** - HTTP client con formato Line Protocol. Soporta encriptación y compresión.
+
+### Configuración Básica
+
+```json
+{
+  "Metrics": {
     "InfluxDB": {
       "Enabled": true,
       "Url": "http://localhost:8086",
-      "Database": "metrics",
-      "Username": "admin",
-      "Password": "password",
-      "RetentionPolicy": "autogen",
-      "BatchSize": 100,
-      "FlushIntervalMs": 5000
+      "Bucket": "metrics"
     }
   }
 }
 ```
 
-**Código (si necesitas configuración programática):**
-
-```csharp
-builder.Services.AddJonjubNetMetrics(builder.Configuration, options =>
-{
-    options.InfluxDB.Enabled = true;
-    options.InfluxDB.Url = "http://influxdb:8086";
-    options.InfluxDB.Database = "production_metrics";
-});
-```
-
-### Paso 3.3: Configurar StatsD
-
-**appsettings.json:**
+### Configuración Completa con Todos los Parámetros
 
 ```json
 {
   "Metrics": {
-    "Enabled": true,
+    "InfluxDB": {
+      "Enabled": true,
+      "Url": "http://influxdb:8086",
+      "Token": "tu-token-influxdb",
+      "Organization": "default",
+      "Bucket": "metrics",
+      "EnableCompression": true,
+      "TimeoutSeconds": 30
+    },
+    "Encryption": {
+      "EnableInTransit": true,
+      "EnableTls": true,
+      "ValidateCertificates": true
+    }
+  }
+}
+```
+
+**Parámetros:**
+- `Enabled` (bool): Habilitar/deshabilitar InfluxDB (default: `true`)
+- `Url` (string): URL del servidor InfluxDB (ej: `"http://influxdb:8086"`)
+- `Token` (string?, opcional): Token de autenticación (InfluxDB 2.x)
+- `Organization` (string): Organización de InfluxDB (default: `"default"`)
+- `Bucket` (string): Bucket donde se almacenan las métricas (default: `"metrics"`)
+- `EnableCompression` (bool): Habilitar compresión GZip (default: `true`)
+- `TimeoutSeconds` (int): Timeout de conexión (default: `30`)
+
+**Nota:** Para InfluxDB 1.x, usar `Database`, `Username` y `Password` en lugar de `Token`.
+
+### Configuración para InfluxDB 1.x
+
+```json
+{
+  "Metrics": {
+    "InfluxDB": {
+      "Enabled": true,
+      "Url": "http://influxdb:8086",
+      "Database": "metrics",
+      "Username": "admin",
+      "Password": "password"
+    }
+  }
+}
+```
+
+### Configuración para InfluxDB 2.x (Cloud/OSS)
+
+```json
+{
+  "Metrics": {
+    "InfluxDB": {
+      "Enabled": true,
+      "Url": "https://us-east-1-1.aws.cloud2.influxdata.com",
+      "Token": "${INFLUXDB_TOKEN}",
+      "Organization": "my-org",
+      "Bucket": "production-metrics"
+    }
+  }
+}
+```
+
+### Verificación
+
+1. Verificar conexión a InfluxDB:
+   ```bash
+   curl http://influxdb:8086/health
+   ```
+
+2. Consultar métricas en InfluxDB:
+   ```sql
+   -- InfluxDB 1.x
+   SELECT * FROM "orders_created_total"
+   
+   -- InfluxDB 2.x (Flux)
+   from(bucket: "metrics")
+     |> range(start: -1h)
+     |> filter(fn: (r) => r._measurement == "orders_created_total")
+   ```
+
+3. Verificar logs de la aplicación: `"Exporting metrics to InfluxDB"`
+
+---
+
+## Integración 4: StatsD
+
+### Estado de Implementación
+✅ **Completo y funcional** - UDP client con formato StatsD estándar. Fallback a logging si falla la conexión.
+
+### Configuración Básica
+
+```json
+{
+  "Metrics": {
     "StatsD": {
       "Enabled": true,
       "Host": "localhost",
-      "Port": 8125,
-      "Prefix": "myservice",
-      "Protocol": "UDP"
+      "Port": 8125
     }
   }
 }
 ```
 
-### Paso 3.4: Configurar Kafka
-
-**appsettings.json:**
+### Configuración Completa con Todos los Parámetros
 
 ```json
 {
   "Metrics": {
-    "Enabled": true,
-    "Kafka": {
+    "StatsD": {
       "Enabled": true,
-      "BootstrapServers": "localhost:9092",
-      "Topic": "metrics",
-      "CompressionType": "gzip",
-      "BatchSize": 100
+      "Host": "statsd-server",
+      "Port": 8125
     }
   }
 }
 ```
 
-### Paso 3.5: Configuración Múltiple (Todos los Sinks)
+**Parámetros:**
+- `Enabled` (bool): Habilitar/deshabilitar StatsD (default: `false`)
+- `Host` (string): Hostname o IP del servidor StatsD (default: `"localhost"`)
+- `Port` (int): Puerto UDP de StatsD (default: `8125`)
 
-**appsettings.json completo:**
+**Nota:** StatsD usa UDP, por lo que no hay autenticación ni encriptación a nivel de protocolo.
+
+### Configuración para Desarrollo
+
+```json
+{
+  "Metrics": {
+    "StatsD": {
+      "Enabled": true,
+      "Host": "localhost",
+      "Port": 8125
+    }
+  }
+}
+```
+
+### Configuración para Producción (Datadog, New Relic, etc.)
+
+```json
+{
+  "Metrics": {
+    "StatsD": {
+      "Enabled": true,
+      "Host": "statsd.datadog.svc.cluster.local",
+      "Port": 8125
+    }
+  }
+}
+```
+
+### Verificación
+
+1. Verificar que el servidor StatsD esté escuchando:
+   ```bash
+   netstat -ulnp | grep 8125
+   ```
+
+2. Verificar logs de la aplicación: `"Exporting metrics to StatsD"`
+
+3. Verificar en tu backend de StatsD (Datadog, New Relic, etc.) que las métricas lleguen
+
+4. Si StatsD no está disponible, las métricas se registrarán en logs como fallback
+
+---
+
+## Integración 5: Kafka
+
+### Estado de Implementación
+⚠️ **Básico funcional** - Estructura lista para integración. Requiere librería Confluent.Kafka para producción.
+
+### Configuración Básica
+
+```json
+{
+  "Metrics": {
+    "Kafka": {
+      "Enabled": true,
+      "Broker": "localhost:9092",
+      "Topic": "metrics"
+    }
+  }
+}
+```
+
+### Configuración Completa con Todos los Parámetros
+
+```json
+{
+  "Metrics": {
+    "Kafka": {
+      "Enabled": true,
+      "Broker": "kafka:9092",
+      "Topic": "metrics",
+      "EnableCompression": true,
+      "BatchSize": 100,
+      "TimeoutSeconds": 30
+    }
+  }
+}
+```
+
+**Parámetros:**
+- `Enabled` (bool): Habilitar/deshabilitar Kafka (default: `true`)
+- `Broker` (string): Bootstrap servers de Kafka (ej: `"kafka1:9092,kafka2:9092"`)
+- `Topic` (string): Tópico donde se publican las métricas (default: `"metrics"`)
+- `EnableCompression` (bool): Habilitar compresión (default: `true`)
+- `BatchSize` (int): Tamaño del batch de mensajes (default: `100`)
+- `TimeoutSeconds` (int): Timeout de conexión (default: `30`)
+
+**⚠️ Nota Importante:** 
+- Actualmente usa logging como fallback
+- Para producción, requiere integración con `Confluent.Kafka`
+- Ver código en `KafkaMetricsSink.cs` para ver el TODO de integración
+
+### Configuración para Desarrollo (Logging Fallback)
+
+```json
+{
+  "Metrics": {
+    "Kafka": {
+      "Enabled": true,
+      "Broker": "localhost:9092",
+      "Topic": "metrics"
+    }
+  }
+}
+```
+
+**Las métricas se registrarán en logs hasta que se integre Confluent.Kafka.**
+
+### Verificación
+
+1. Verificar logs de la aplicación: `"Kafka (logging fallback): Would send X messages to topic metrics"`
+2. Para producción, integrar Confluent.Kafka según el TODO en el código
+
+---
+
+## Configuración Múltiple - Todos los Sinks Simultáneamente
+
+### Ejemplo Completo: Habilitar Múltiples Sinks
 
 ```json
 {
@@ -616,71 +1028,287 @@ builder.Services.AddJonjubNetMetrics(builder.Configuration, options =>
     
     "OpenTelemetry": {
       "Enabled": true,
-      "Endpoint": "http://otel-collector:4318/v1/metrics",
-      "Protocol": "HttpJson"
+      "Endpoint": "https://otel-collector:4318/v1/metrics",
+      "Protocol": "HttpJson",
+      "EnableCompression": true,
+      "TimeoutSeconds": 30
     },
     
     "InfluxDB": {
       "Enabled": true,
-      "Url": "http://influxdb:8086",
-      "Database": "metrics",
-      "Username": "admin",
-      "Password": "password"
+      "Url": "https://influxdb:8086",
+      "Token": "${INFLUXDB_TOKEN}",
+      "Organization": "production",
+      "Bucket": "metrics",
+      "EnableCompression": true,
+      "TimeoutSeconds": 30
     },
     
     "StatsD": {
       "Enabled": true,
       "Host": "statsd-server",
-      "Port": 8125,
-      "Prefix": "myservice"
+      "Port": 8125
     },
     
     "Kafka": {
       "Enabled": false,
-      "BootstrapServers": "kafka:9092",
+      "Broker": "kafka:9092",
       "Topic": "metrics"
     }
   }
 }
 ```
 
-### Paso 3.6: Verificar Exportación a Múltiples Sinks
+**Todas las métricas se exportarán simultáneamente a todos los sinks habilitados.**
 
-1. **Prometheus:** `http://localhost:5000/metrics`
-2. **OpenTelemetry:** Verificar logs o el collector de OTel
-3. **InfluxDB:** Consultar con:
-   ```sql
-   SELECT * FROM "orders_created_total"
-   ```
-4. **StatsD:** Verificar en tu servidor StatsD (ej: Datadog, New Relic)
+### Cómo Habilitar/Deshabilitar Sinks
 
-### ✅ Checklist Nivel 3
+**Para habilitar un sink:** Cambiar `"Enabled": true` en su sección.
 
-- [ ] OpenTelemetry configurado y funcionando
-- [ ] InfluxDB configurado y funcionando
-- [ ] StatsD configurado y funcionando
-- [ ] Kafka configurado (opcional)
-- [ ] Múltiples sinks activos simultáneamente
-- [ ] Métricas exportándose a todos los sinks configurados
-- [ ] Verificación en cada backend de métricas
+**Para deshabilitar un sink:** Cambiar `"Enabled": false` en su sección.
+
+**Ejemplo: Habilitar solo Prometheus e InfluxDB:**
+
+```json
+{
+  "Metrics": {
+    "Prometheus": {
+      "Enabled": true,
+      "Endpoint": "/metrics"
+    },
+    "OpenTelemetry": {
+      "Enabled": false
+    },
+    "InfluxDB": {
+      "Enabled": true,
+      "Url": "http://influxdb:8086",
+      "Bucket": "metrics"
+    },
+    "StatsD": {
+      "Enabled": false
+    },
+    "Kafka": {
+      "Enabled": false
+    }
+  }
+}
+```
+
+**El código de tu servicio NO cambia - solo la configuración.**
 
 ---
 
-### 🤖 Prompt para Cursor - Nivel 3
+## Verificación Genérica de Sinks
+
+### Pasos Comunes para Todos los Sinks
+
+1. **Habilitar en appsettings.json:**
+   ```json
+   {
+     "Metrics": {
+       "[NombreSink]": {
+         "Enabled": true,
+         // ... parámetros específicos
+       }
+     }
+   }
+   ```
+
+2. **Reiniciar la aplicación**
+
+3. **Verificar logs:**
+   - Buscar: `"Exporting metrics to [NombreSink]"`
+   - No deberían aparecer errores de conexión
+
+4. **Verificar en el backend:**
+   - Prometheus: `http://localhost:5000/metrics`
+   - OpenTelemetry: Verificar en OTel Collector
+   - InfluxDB: Consultar con Flux/SQL
+   - StatsD: Verificar en backend (Datadog, New Relic)
+   - Kafka: Verificar en consumer (cuando esté integrado)
+
+---
+
+## ✅ Checklist Nivel 3 (Genérico)
+
+- [ ] Entender que todos los sinks se configuran igual (solo `appsettings.json`)
+- [ ] Entender que el código del servicio es IDÉNTICO para todos los sinks
+- [ ] Prometheus configurado y endpoint `/metrics` accesible
+- [ ] OpenTelemetry configurado y conectado a OTel Collector
+- [ ] InfluxDB configurado y métricas almacenándose
+- [ ] StatsD configurado y métricas llegando al servidor
+- [ ] Kafka configurado (opcional, requiere integración)
+- [ ] Múltiples sinks activos simultáneamente
+- [ ] Verificación en cada backend de métricas
+- [ ] Probar cambiar de sink solo modificando configuración (sin cambiar código)
+
+---
+
+## 🤖 Prompts para Cursor - Por Integración
+
+### Prompt 1: Integrar Prometheus
 
 ```
-Necesito configurar múltiples exportadores (sinks) de métricas en mi proyecto.
+Necesito integrar Prometheus en mi proyecto JonjubNet.CleanArch usando JonjubNet.Metrics.
+
+IMPORTANTE: El código del servicio es IDÉNTICO para todos los sinks. Solo cambia la configuración.
 
 Pasos a realizar:
-1. Configurar OpenTelemetry (OTLP) en appsettings.json con endpoint y protocolo HTTP JSON
-2. Configurar InfluxDB con URL, base de datos, credenciales y políticas de retención
-3. Configurar StatsD con host, puerto y prefijo
-4. Configurar Kafka con bootstrap servers y topic (opcional)
-5. Asegurar que todos los sinks se registren correctamente mediante AddJonjubNetMetrics
-6. Verificar que las métricas se exporten simultáneamente a Prometheus, OpenTelemetry e InfluxDB
-7. Probar que cada sink reciba las métricas correctamente
+1. Agregar referencia al proyecto JonjubNet.Metrics en mi proyecto principal
+2. Configurar AddJonjubNetMetrics(builder.Configuration) en Program.cs (UNA SOLA VEZ)
+3. Configurar Prometheus en appsettings.json con "Enabled": true y "Endpoint": "/metrics"
+4. Implementar métricas en mi servicio usando IMetricsClient (código idéntico para todos los sinks):
+   - Inyectar IMetricsClient en el constructor
+   - Usar _metrics.Increment() para contadores
+   - Usar _metrics.SetGauge() para gauges
+   - Usar _metrics.StartTimer() para timers
+5. Verificar que el endpoint /metrics exponga las métricas en formato Prometheus
+6. Probar accediendo a http://localhost:5000/metrics y verificar que se muestren las métricas
 
-Usa configuración desde appsettings.json. Los ejemplos deben incluir valores de ejemplo para desarrollo y producción.
+NO se necesita código adicional específico para Prometheus - solo configuración en appsettings.json.
+El mismo código funcionará si cambio a InfluxDB, Kafka, etc. solo modificando la configuración.
+```
+
+### Prompt 2: Integrar OpenTelemetry
+
+```
+Necesito integrar OpenTelemetry (OTLP) en mi proyecto usando JonjubNet.Metrics.
+
+IMPORTANTE: El código del servicio es IDÉNTICO para todos los sinks. Solo cambia la configuración.
+
+Pasos a realizar:
+1. Asegurar que AddJonjubNetMetrics(builder.Configuration) esté configurado en Program.cs
+2. Configurar OpenTelemetry en appsettings.json con:
+   - "Enabled": true
+   - "Endpoint": "http://otel-collector:4318/v1/metrics"
+   - "Protocol": "HttpJson"
+   - "EnableCompression": true (opcional)
+   - "TimeoutSeconds": 30
+3. Si es producción, configurar encriptación en "Encryption.EnableInTransit": true y "EnableTls": true
+4. Verificar que AddJonjubNetMetrics registre automáticamente el sink (NO se necesita código adicional)
+5. Verificar logs para confirmar exportación: "Exporting metrics to OpenTelemetry"
+6. Verificar en OTel Collector que recibe las métricas
+
+El código de mi servicio NO cambia - uso el mismo IMetricsClient que ya tengo implementado.
+Solo cambio la configuración en appsettings.json para habilitar OpenTelemetry.
+```
+
+### Prompt 3: Integrar InfluxDB
+
+```
+Necesito integrar InfluxDB en mi proyecto usando JonjubNet.Metrics.
+
+IMPORTANTE: El código del servicio es IDÉNTICO para todos los sinks. Solo cambia la configuración.
+
+Pasos a realizar:
+1. Asegurar que AddJonjubNetMetrics(builder.Configuration) esté configurado en Program.cs
+2. Configurar InfluxDB en appsettings.json con:
+   - "Enabled": true
+   - "Url": "http://influxdb:8086"
+   - Para InfluxDB 2.x: "Token", "Organization", "Bucket"
+   - Para InfluxDB 1.x: "Database", "Username", "Password"
+   - "EnableCompression": true (opcional)
+   - "TimeoutSeconds": 30
+3. Si es producción, configurar encriptación y TLS
+4. Verificar conexión a InfluxDB
+5. Verificar logs: "Exporting metrics to InfluxDB"
+6. Consultar métricas en InfluxDB para confirmar que se almacenan
+
+El código de mi servicio NO cambia - uso el mismo IMetricsClient que ya tengo implementado.
+Solo cambio la configuración en appsettings.json para habilitar InfluxDB.
+```
+
+### Prompt 4: Integrar StatsD
+
+```
+Necesito integrar StatsD en mi proyecto usando JonjubNet.Metrics.
+
+IMPORTANTE: El código del servicio es IDÉNTICO para todos los sinks. Solo cambia la configuración.
+
+Pasos a realizar:
+1. Asegurar que AddJonjubNetMetrics(builder.Configuration) esté configurado en Program.cs
+2. Configurar StatsD en appsettings.json con:
+   - "Enabled": true
+   - "Host": "statsd-server" (o IP del servidor)
+   - "Port": 8125 (puerto UDP estándar)
+3. Verificar que el servidor StatsD esté escuchando en el puerto 8125
+4. Verificar logs: "Exporting metrics to StatsD"
+5. Verificar en tu backend de StatsD (Datadog, New Relic, etc.) que las métricas lleguen
+6. Si StatsD no está disponible, las métricas se registrarán en logs como fallback
+
+El código de mi servicio NO cambia - uso el mismo IMetricsClient que ya tengo implementado.
+Solo cambio la configuración en appsettings.json para habilitar StatsD.
+```
+
+### Prompt 5: Integrar Kafka
+
+```
+Necesito integrar Kafka en mi proyecto usando JonjubNet.Metrics.
+
+IMPORTANTE: El código del servicio es IDÉNTICO para todos los sinks. Solo cambia la configuración.
+
+Pasos a realizar:
+1. Asegurar que AddJonjubNetMetrics(builder.Configuration) esté configurado en Program.cs
+2. Configurar Kafka en appsettings.json con:
+   - "Enabled": true
+   - "Broker": "kafka:9092" (bootstrap servers)
+   - "Topic": "metrics"
+   - "EnableCompression": true (opcional)
+   - "BatchSize": 100
+3. NOTA: Actualmente usa logging como fallback - requiere integración con Confluent.Kafka para producción
+4. Verificar logs: "Kafka (logging fallback): Would send X messages"
+5. Para producción, integrar Confluent.Kafka según el TODO en KafkaMetricsSink.cs
+
+El código de mi servicio NO cambia - uso el mismo IMetricsClient que ya tengo implementado.
+Solo cambio la configuración en appsettings.json para habilitar Kafka.
+La configuración básica está lista, pero requiere código adicional para producción (integración con Confluent.Kafka).
+```
+
+### Prompt 6: Configurar Múltiples Sinks Simultáneamente
+
+```
+Necesito configurar múltiples exportadores (sinks) de métricas simultáneamente en mi proyecto.
+
+IMPORTANTE: El código del servicio es IDÉNTICO para todos los sinks. Solo cambia la configuración.
+
+Pasos a realizar:
+1. Asegurar que AddJonjubNetMetrics(builder.Configuration) esté configurado en Program.cs (UNA SOLA VEZ)
+2. Configurar todos los sinks deseados en appsettings.json bajo la sección "Metrics"
+3. Habilitar cada sink cambiando "Enabled": true
+4. Configurar parámetros específicos de cada sink (URLs, credenciales, etc.)
+5. Verificar que AddJonjubNetMetrics registre automáticamente todos los sinks configurados
+6. Verificar que las métricas se exporten simultáneamente a todos los sinks habilitados
+7. Probar habilitar/deshabilitar sinks cambiando solo "Enabled" sin modificar código
+
+ENFATIZAR:
+- El código de mi servicio es IDÉNTICO para todos los sinks
+- Solo uso IMetricsClient con los mismos métodos (Increment, SetGauge, StartTimer, etc.)
+- El cambio de sink es 100% basado en configuración - NO se necesita código adicional
+- Todos los sinks funcionan en paralelo y exportan las mismas métricas
+- Puedo cambiar de Prometheus a InfluxDB solo modificando appsettings.json, sin tocar el código del servicio
+```
+
+### Prompt 7: Cambiar de un Sink a Otro (Sin Cambiar Código)
+
+```
+Necesito cambiar de Prometheus a InfluxDB (o cualquier otro sink) en mi proyecto.
+
+IMPORTANTE: El código del servicio NO cambia. Solo modifico la configuración.
+
+Pasos a realizar:
+1. Verificar que AddJonjubNetMetrics(builder.Configuration) esté en Program.cs
+2. En appsettings.json, cambiar la configuración:
+   - Deshabilitar el sink actual: "Prometheus": { "Enabled": false }
+   - Habilitar el nuevo sink: "InfluxDB": { "Enabled": true, "Url": "...", "Bucket": "..." }
+3. Reiniciar la aplicación
+4. Verificar que las métricas se exporten al nuevo sink
+5. Verificar logs: "Exporting metrics to InfluxDB"
+
+DEMOSTRAR que:
+- El código de mi servicio (OrderService, etc.) NO cambia
+- Solo uso IMetricsClient con los mismos métodos
+- El cambio es 100% en appsettings.json
+- Las mismas métricas se exportan al nuevo sink automáticamente
 ```
 
 ---

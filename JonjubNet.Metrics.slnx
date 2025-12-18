@@ -1,17 +1,15 @@
 <Solution>
-  <Folder Name="/src/">
-    <Project Path="WebApplication1/WebApplication1.csproj" Id="997fa958-de03-4842-9b9e-244f72fc476d" />
-  </Folder>
+  <Folder Name="/src/" />
   <Folder Name="/src/Core/">
     <Project Path="Core/JonjubNet.Metrics.Core/JonjubNet.Metrics.Core.csproj" />
   </Folder>
   <Folder Name="/src/Infrastructure/">
-    <Project Path="Infrastructure/JonjubNet.Metrics.Shared/JonjubNet.Metrics.Shared.csproj" />
-    <Project Path="Infrastructure/JonjubNet.Metrics.Prometheus/JonjubNet.Metrics.Prometheus.csproj" />
-    <Project Path="Infrastructure/JonjubNet.Metrics.OpenTelemetry/JonjubNet.Metrics.OpenTelemetry.csproj" />
-    <Project Path="Infrastructure/JonjubNet.Metrics.Kafka/JonjubNet.Metrics.Kafka.csproj" />
-    <Project Path="Infrastructure/JonjubNet.Metrics.StatsD/JonjubNet.Metrics.StatsD.csproj" />
     <Project Path="Infrastructure/JonjubNet.Metrics.InfluxDB/JonjubNet.Metrics.InfluxDB.csproj" />
+    <Project Path="Infrastructure/JonjubNet.Metrics.Kafka/JonjubNet.Metrics.Kafka.csproj" />
+    <Project Path="Infrastructure/JonjubNet.Metrics.OpenTelemetry/JonjubNet.Metrics.OpenTelemetry.csproj" />
+    <Project Path="Infrastructure/JonjubNet.Metrics.Prometheus/JonjubNet.Metrics.Prometheus.csproj" />
+    <Project Path="Infrastructure/JonjubNet.Metrics.Shared/JonjubNet.Metrics.Shared.csproj" />
+    <Project Path="Infrastructure/JonjubNet.Metrics.StatsD/JonjubNet.Metrics.StatsD.csproj" />
   </Folder>
   <Folder Name="/src/Presentation/">
     <Project Path="Presentation/JonjubNet.Metrics/JonjubNet.Metrics.csproj" />
