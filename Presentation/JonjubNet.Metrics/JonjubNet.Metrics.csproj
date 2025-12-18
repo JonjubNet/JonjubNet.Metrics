@@ -8,7 +8,7 @@
     
     <!-- NuGet Package Properties -->
     <PackageId>JonjubNet.Metrics</PackageId>
-    <Version>1.0.17</Version>
+    <Version>1.0.18</Version>
     <Authors>JonjubNet</Authors>
     <Company>JonjubNet</Company>
     <Description>Biblioteca de métricas para aplicaciones .NET con soporte para contadores, gauges, histogramas y timers, integración con Prometheus y exportación a múltiples formatos.</Description>
@@ -121,43 +121,7 @@
     </ItemGroup>
   </Target>
   
-  <!-- Target CRÍTICO: Agregar referencias explícitas al .nuspec usando MSBuild nativo -->
-  <!-- Solución pura MSBuild sin dependencias externas - modifica el .nuspec como texto -->
-  <Target Name="AddReferencesToNuspec" AfterTargets="_IntermediateNuspecFile" BeforeTargets="_GetPackageFiles">
-    <PropertyGroup>
-      <_NuspecFile>$(IntermediateOutputPath)$(PackageId).nuspec</_NuspecFile>
-      <_ReferencesSection>
-    &lt;references&gt;
-      &lt;group targetFramework=&quot;$(TargetFramework)&quot;&gt;
-        &lt;reference file=&quot;JonjubNet.Metrics.dll&quot; /&gt;
-        &lt;reference file=&quot;JonjubNet.Metrics.Core.dll&quot; /&gt;
-        &lt;reference file=&quot;JonjubNet.Metrics.Shared.dll&quot; /&gt;
-        &lt;reference file=&quot;JonjubNet.Metrics.Prometheus.dll&quot; /&gt;
-        &lt;reference file=&quot;JonjubNet.Metrics.OpenTelemetry.dll&quot; /&gt;
-        &lt;reference file=&quot;JonjubNet.Metrics.InfluxDB.dll&quot; /&gt;
-      &lt;/group&gt;
-    &lt;/references&gt;
-      </_ReferencesSection>
-    </PropertyGroup>
-    
-    <!-- Leer el contenido del nuspec -->
-    <ReadLinesFromFile File="$(_NuspecFile)" Condition="Exists('$(_NuspecFile)')">
-      <Output TaskParameter="Lines" ItemName="_NuspecLines" />
-    </ReadLinesFromFile>
-    
-    <!-- Crear nuevas líneas insertando referencias antes de </metadata> -->
-    <ItemGroup>
-      <_NewNuspecLines Include="@(_NuspecLines)" Condition="'%(Identity)' != '&lt;/metadata&gt;'" />
-      <_NewNuspecLines Include="$(_ReferencesSection)" />
-      <_NewNuspecLines Include="&lt;/metadata&gt;" />
-    </ItemGroup>
-    
-    <!-- Escribir el nuspec modificado -->
-    <WriteLinesToFile
-      Condition="Exists('$(_NuspecFile)')"
-      File="$(_NuspecFile)"
-      Lines="@(_NewNuspecLines)"
-      Overwrite="true" />
-  </Target>
+  <!-- Importar target para agregar referencias al .nuspec -->
+  <Import Project="AddReferences.targets" />
 
 </Project>
