@@ -8,7 +8,7 @@
     
     <!-- NuGet Package Properties -->
     <PackageId>JonjubNet.Metrics</PackageId>
-    <Version>1.0.10</Version>
+    <Version>1.0.11</Version>
     <Authors>JonjubNet</Authors>
     <Company>JonjubNet</Company>
     <Description>Biblioteca de métricas para aplicaciones .NET con soporte para contadores, gauges, histogramas y timers, integración con Prometheus y exportación a múltiples formatos.</Description>
@@ -49,26 +49,31 @@
 
   <ItemGroup>
     <!-- Configurar ProjectReference para incluir ensamblados en el paquete sin crear dependencias -->
-    <!-- PrivateAssets="All" evita que se creen dependencias de paquetes -->
-    <!-- Los ensamblados se incluyen físicamente mediante el target IncludeProjectReferencesInPackage -->
+    <!-- PrivateAssets="compile" permite que los ensamblados se incluyan en el paquete como referencias -->
+    <!-- IncludeAssets="runtime" asegura que los ensamblados se incluyan en el paquete -->
     <ProjectReference Include="..\..\Core\JonjubNet.Metrics.Core\JonjubNet.Metrics.Core.csproj">
-      <PrivateAssets>All</PrivateAssets>
+      <PrivateAssets>compile</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.Shared\JonjubNet.Metrics.Shared.csproj">
-      <PrivateAssets>All</PrivateAssets>
+      <PrivateAssets>compile</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.Prometheus\JonjubNet.Metrics.Prometheus.csproj">
-      <PrivateAssets>All</PrivateAssets>
+      <PrivateAssets>compile</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.OpenTelemetry\JonjubNet.Metrics.OpenTelemetry.csproj">
-      <PrivateAssets>All</PrivateAssets>
+      <PrivateAssets>compile</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.InfluxDB\JonjubNet.Metrics.InfluxDB.csproj">
-      <PrivateAssets>All</PrivateAssets>
+      <PrivateAssets>compile</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
@@ -90,7 +95,12 @@
   <Target Name="IncludeProjectReferencesInPackage" BeforeTargets="_GetPackageFiles" Condition="'$(NoBuild)' != 'true'">
     <ItemGroup>
       <!-- Obtener todos los ensamblados de proyectos referenciados desde ReferenceCopyLocalPaths -->
-      <TfmSpecificBuildOutput Include="@(ReferenceCopyLocalPaths-&gt;WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
+      <_ProjectRefAssemblies Include="@(ReferenceCopyLocalPaths-&gt;WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
+    </ItemGroup>
+    
+    <!-- Agregar como TfmSpecificBuildOutput para que se incluyan en lib/$(TargetFramework)/ y se reconozcan como referencias -->
+    <ItemGroup>
+      <TfmSpecificBuildOutput Include="@(_ProjectRefAssemblies)" />
     </ItemGroup>
   </Target>
   
