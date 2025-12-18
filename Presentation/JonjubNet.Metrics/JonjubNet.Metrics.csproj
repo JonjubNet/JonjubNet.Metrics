@@ -30,7 +30,8 @@
     <NoWarn>$(NoWarn);1591</NoWarn>
     
     <!-- IMPORTANTE: Incluir ensamblados de proyectos referenciados en el paquete -->
-    <!-- Se maneja con targets separados para build y no-build -->
+    <!-- Los ensamblados se incluyen automáticamente cuando se empaqueta -->
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeProjectReferencesInPackage</TargetsForTfmSpecificBuildOutput>
   </PropertyGroup>
 
   <ItemGroup>
@@ -47,25 +48,21 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Configurar ProjectReference para incluir ensamblados en el paquete sin crear dependencias -->
+    <!-- Configurar ProjectReference para incluir ensamblados en el paquete -->
+    <!-- Sin PrivateAssets, los ensamblados se incluirán automáticamente en el paquete -->
     <ProjectReference Include="..\..\Core\JonjubNet.Metrics.Core\JonjubNet.Metrics.Core.csproj">
-      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.Shared\JonjubNet.Metrics.Shared.csproj">
-      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.Prometheus\JonjubNet.Metrics.Prometheus.csproj">
-      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.OpenTelemetry\JonjubNet.Metrics.OpenTelemetry.csproj">
-      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.InfluxDB\JonjubNet.Metrics.InfluxDB.csproj">
-      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
@@ -83,16 +80,16 @@
   </ItemGroup>
 
   <!-- Target para incluir ensamblados de proyectos referenciados en el paquete -->
-  <!-- Funciona tanto con build como con no-build -->
-  <Target Name="CopyProjectReferencesToPackage" BeforeTargets="_GetPackageFiles" Condition="'$(NoBuild)' != 'true'">
-    <!-- Cuando se hace build normal, usar ReferenceCopyLocalPaths -->
+  <!-- Esto asegura que los ensamblados se incluyan como referencias en el paquete NuGet -->
+  <Target Name="IncludeProjectReferencesInPackage" BeforeTargets="_GetPackageFiles" Condition="'$(NoBuild)' != 'true'">
     <ItemGroup>
-      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths-&gt;WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
+      <!-- Obtener todos los ensamblados de proyectos referenciados desde ReferenceCopyLocalPaths -->
+      <TfmSpecificBuildOutput Include="@(ReferenceCopyLocalPaths-&gt;WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
     </ItemGroup>
   </Target>
   
   <!-- Target alternativo para no-build: incluir archivos ya compilados -->
-  <Target Name="CopyProjectReferencesToPackageNoBuild" BeforeTargets="_GetPackageFiles" Condition="'$(NoBuild)' == 'true'">
+  <Target Name="IncludeProjectReferencesInPackageNoBuild" BeforeTargets="_GetPackageFiles" Condition="'$(NoBuild)' == 'true'">
     <ItemGroup>
       <!-- Incluir DLLs de proyectos referenciados desde sus carpetas de output -->
       <_ProjectRefDlls Include="@(ProjectReference->'%(RootDir)%(Directory)bin\$(Configuration)\$(TargetFramework)\%(Filename).dll')" />
@@ -105,10 +102,10 @@
       <_ExistingPdbs Include="@(_ProjectRefPdbs)" Condition="Exists('%(Identity)')" />
     </ItemGroup>
     
-    <!-- Incluir en el paquete -->
+    <!-- Incluir en el paquete usando TfmSpecificBuildOutput para que se reconozcan como referencias -->
     <ItemGroup>
-      <BuildOutputInPackage Include="@(_ExistingDlls)" TargetPath="lib/$(TargetFramework)/%(Filename)%(Extension)" />
-      <BuildOutputInPackage Include="@(_ExistingPdbs)" TargetPath="lib/$(TargetFramework)/%(Filename)%(Extension)" Condition="'$(IncludeSymbols)' == 'true'" />
+      <TfmSpecificBuildOutput Include="@(_ExistingDlls)" />
+      <TfmSpecificBuildOutput Include="@(_ExistingPdbs)" Condition="'$(IncludeSymbols)' == 'true'" />
     </ItemGroup>
   </Target>
 

@@ -9,6 +9,7 @@
 5. [Nivel 5 - Resiliencia Enterprise](#nivel-5---resiliencia-enterprise)
 6. [Nivel 6 - Seguridad](#nivel-6---seguridad)
 7. [Nivel 7 - Configuración Dinámica](#nivel-7---configuración-dinámica)
+8. [Infraestructura Necesaria por Sink](#-infraestructura-necesaria-por-sink)
 
 ---
 
@@ -31,6 +32,7 @@ Agrega la referencia al proyecto en tu solución:
 
 ```csharp
 using JonjubNet.Metrics;
+using JonjubNet.Metrics.Hosting;
 using Microsoft.Extensions.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -45,6 +47,8 @@ app.UseMetricsMiddleware();
 
 app.Run();
 ```
+
+**Nota:** El método `AddJonjubNetMetrics` está en el namespace `JonjubNet.Metrics.Hosting`. Alternativamente, puedes usar `AddMetricsInfrastructure` que está en `JonjubNet.Metrics` y no requiere el using adicional.
 
 ### Paso 1.3: Configurar appsettings.json
 
@@ -2414,6 +2418,310 @@ Incluye ejemplos de endpoints REST para actualizar configuración y servicios pa
     }
   }
 }
+```
+
+---
+
+## 🏗️ Infraestructura Necesaria por Sink
+
+### Resumen: ¿Qué Necesitas Instalar?
+
+| Sink | ¿Requiere Instalación? | Qué Instalar | Dificultad | Visualización |
+|------|------------------------|--------------|------------|---------------|
+| **Prometheus** | Opcional | Prometheus Server + Grafana | Fácil | Grafana Dashboards |
+| **OpenTelemetry** | Sí | OTel Collector | Media | Jaeger, Grafana, etc. |
+| **InfluxDB** | Sí | InfluxDB Server | Fácil | InfluxDB UI, Grafana |
+| **StatsD** | Sí | StatsD Server o Agent | Fácil | Datadog, New Relic, etc. |
+| **Kafka** | Sí | Kafka Cluster | Avanzada | Consumer personalizado |
+
+---
+
+### 1. Prometheus
+
+#### Opción A: Solo Ver Métricas (Sin Instalación)
+Tu aplicación expone el endpoint `/metrics`. Puedes acceder directamente:
+- URL: `http://localhost:5000/metrics`
+- Formato: Texto plano Prometheus
+- **No necesitas instalar nada adicional**
+
+#### Opción B: Monitoreo Completo (Recomendado)
+
+**Instalación con Docker:**
+```bash
+# Prometheus Server
+docker run -d -p 9090:9090 \
+  -v /path/to/prometheus.yml:/etc/prometheus/prometheus.yml \
+  prom/prometheus
+
+# Grafana (opcional, para visualización)
+docker run -d -p 3000:3000 \
+  -e GF_SECURITY_ADMIN_PASSWORD=admin \
+  grafana/grafana
+```
+
+**Configuración `prometheus.yml`:**
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'mi-servicio'
+    static_configs:
+      - targets: ['host.docker.internal:5000']  # Tu aplicación
+```
+
+**Pasos:**
+1. Instalar Prometheus Server
+2. Configurar scraping de tu aplicación
+3. (Opcional) Instalar Grafana y conectarlo a Prometheus
+4. Crear dashboards en Grafana
+
+---
+
+### 2. OpenTelemetry (OTLP)
+
+**Requiere:** OpenTelemetry Collector
+
+**Instalación con Docker:**
+```bash
+docker run -d -p 4318:4318 \
+  -v /path/to/otel-collector-config.yaml:/etc/otel-collector-config.yaml \
+  otel/opentelemetry-collector:latest \
+  --config=/etc/otel-collector-config.yaml
+```
+
+**Configuración básica `otel-collector-config.yaml`:**
+```yaml
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  # Opción 1: Exportar a Prometheus
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+  
+  # Opción 2: Exportar a Jaeger
+  jaeger:
+    endpoint: jaeger:14250
+  
+  # Opción 3: Exportar a otros backends
+  logging:
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus, logging]
+```
+
+**Backends compatibles:**
+- Prometheus
+- Jaeger
+- Grafana Cloud
+- Datadog
+- New Relic
+- Azure Monitor
+- AWS CloudWatch
+
+---
+
+### 3. InfluxDB
+
+**Requiere:** Servidor InfluxDB
+
+**Instalación con Docker:**
+
+**InfluxDB 2.x (Recomendado):**
+```bash
+docker run -d -p 8086:8086 \
+  -e DOCKER_INFLUXDB_INIT_MODE=setup \
+  -e DOCKER_INFLUXDB_INIT_USERNAME=admin \
+  -e DOCKER_INFLUXDB_INIT_PASSWORD=password \
+  -e DOCKER_INFLUXDB_INIT_ORG=my-org \
+  -e DOCKER_INFLUXDB_INIT_BUCKET=metrics \
+  influxdb:2.7
+```
+
+**InfluxDB 1.x (Legacy):**
+```bash
+docker run -d -p 8086:8086 \
+  -e INFLUXDB_DB=metrics \
+  -e INFLUXDB_ADMIN_USER=admin \
+  -e INFLUXDB_ADMIN_PASSWORD=password \
+  influxdb:1.8
+```
+
+**Visualización:**
+- **InfluxDB UI (incluida):** `http://localhost:8086`
+- **Grafana (recomendado):** Conectar InfluxDB como fuente de datos
+
+**Consultar métricas:**
+```sql
+-- InfluxDB 1.x
+SELECT * FROM "orders_created_total"
+
+-- InfluxDB 2.x (Flux)
+from(bucket: "metrics")
+  |> range(start: -1h)
+  |> filter(fn: (r) => r._measurement == "orders_created_total")
+```
+
+---
+
+### 4. StatsD
+
+**Requiere:** Servidor StatsD o Agent compatible
+
+**Opción A: StatsD Standalone**
+```bash
+docker run -d -p 8125:8125/udp -p 8126:8126 \
+  prom/statsd-exporter
+```
+
+**Opción B: Integración con Servicios Cloud**
+
+**Datadog:**
+```bash
+docker run -d --name datadog-agent \
+  -e DD_API_KEY=tu-api-key \
+  -e DD_SITE=datadoghq.com \
+  -p 8125:8125/udp \
+  datadog/agent:latest
+```
+
+**New Relic:**
+```bash
+docker run -d \
+  -e NEW_RELIC_LICENSE_KEY=tu-license-key \
+  -p 8125:8125/udp \
+  newrelic/infrastructure:latest
+```
+
+**Grafana Cloud Agent:**
+```bash
+docker run -d -p 8125:8125/udp \
+  -e GRAFANA_CLOUD_API_KEY=tu-api-key \
+  grafana/agent:latest
+```
+
+---
+
+### 5. Kafka
+
+**Requiere:** Cluster Kafka
+
+**Instalación con Docker Compose:**
+```yaml
+version: '3.8'
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+```
+
+**Consumidores recomendados:**
+- Kafka Connect
+- Fluentd
+- Logstash
+- Aplicaciones personalizadas
+
+**⚠️ Nota:** Actualmente Kafka usa logging como fallback. Para producción, requiere integración con `Confluent.Kafka`.
+
+---
+
+## 🎯 Recomendaciones por Escenario
+
+### Escenario 1: Desarrollo Local (Más Simple)
+```json
+{
+  "Metrics": {
+    "Prometheus": {
+      "Enabled": true,
+      "Endpoint": "/metrics"
+    }
+  }
+}
+```
+- **No instales nada adicional**
+- Accede a `http://localhost:5000/metrics` para ver métricas
+
+### Escenario 2: Producción Simple (Prometheus + Grafana)
+1. Instalar Prometheus Server
+2. Instalar Grafana
+3. Configurar Prometheus para hacer scraping de tu servicio
+4. Crear dashboards en Grafana
+
+### Escenario 3: Producción Enterprise (OpenTelemetry)
+1. Instalar OpenTelemetry Collector
+2. Configurar exportadores (Prometheus, Jaeger, etc.)
+3. Visualizar en Grafana/Jaeger
+
+### Escenario 4: Cloud Managed (Más Fácil)
+- **AWS:** CloudWatch (StatsD o OTLP)
+- **Azure:** Azure Monitor (OTLP)
+- **GCP:** Cloud Monitoring (OTLP)
+- **Datadog:** Datadog Agent (StatsD)
+- **New Relic:** New Relic Agent (StatsD)
+
+---
+
+## 🐳 Stack Completo Recomendado (Docker Compose)
+
+```yaml
+version: '3.8'
+services:
+  # Tu aplicación (ya configurada)
+  mi-servicio:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - Metrics__Prometheus__Enabled=true
+      - Metrics__InfluxDB__Enabled=true
+      - Metrics__InfluxDB__Url=http://influxdb:8086
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+  # InfluxDB
+  influxdb:
+    image: influxdb:2.7
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=password
+      - DOCKER_INFLUXDB_INIT_ORG=my-org
+      - DOCKER_INFLUXDB_INIT_BUCKET=metrics
 ```
 
 ---
