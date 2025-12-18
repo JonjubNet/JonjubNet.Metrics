@@ -8,7 +8,7 @@
     
     <!-- NuGet Package Properties -->
     <PackageId>JonjubNet.Metrics</PackageId>
-    <Version>1.0.16</Version>
+    <Version>1.0.17</Version>
     <Authors>JonjubNet</Authors>
     <Company>JonjubNet</Company>
     <Description>Biblioteca de métricas para aplicaciones .NET con soporte para contadores, gauges, histogramas y timers, integración con Prometheus y exportación a múltiples formatos.</Description>
@@ -51,6 +51,7 @@
     <!-- Configurar ProjectReference para incluir ensamblados en el paquete sin crear dependencias -->
     <!-- PrivateAssets="All" evita que se creen dependencias de paquetes -->
     <!-- Los ensamblados se incluirán físicamente mediante el target IncludeProjectReferencesInPackage -->
+    <!-- Las referencias se agregarán al .nuspec mediante el target AddReferencesToNuspec -->
     <ProjectReference Include="..\..\Core\JonjubNet.Metrics.Core\JonjubNet.Metrics.Core.csproj">
       <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
@@ -120,33 +121,43 @@
     </ItemGroup>
   </Target>
   
-  <!-- Target CRÍTICO: Agregar referencias explícitas al paquete después de crearlo -->
-  <!-- Multiplataforma: usa pwsh en Linux/Mac y powershell.exe en Windows -->
-  <Target Name="AddExplicitReferencesToPackage" AfterTargets="Pack">
+  <!-- Target CRÍTICO: Agregar referencias explícitas al .nuspec usando MSBuild nativo -->
+  <!-- Solución pura MSBuild sin dependencias externas - modifica el .nuspec como texto -->
+  <Target Name="AddReferencesToNuspec" AfterTargets="_IntermediateNuspecFile" BeforeTargets="_GetPackageFiles">
     <PropertyGroup>
-      <_ScriptPath>$(MSBuildThisFileDirectory)AddReferencesToPackage.ps1</_ScriptPath>
-      <_PackageOutputPath Condition="'$(PackageOutputPath)' == ''">$(OutputPath)</_PackageOutputPath>
-      <!-- Detectar PowerShell: pwsh (PowerShell Core) en Linux/Mac, powershell.exe en Windows -->
-      <_PowerShellExe Condition="'$(OS)' == 'Windows_NT'">powershell.exe</_PowerShellExe>
-      <_PowerShellExe Condition="'$(OS)' != 'Windows_NT'">pwsh</_PowerShellExe>
+      <_NuspecFile>$(IntermediateOutputPath)$(PackageId).nuspec</_NuspecFile>
+      <_ReferencesSection>
+    &lt;references&gt;
+      &lt;group targetFramework=&quot;$(TargetFramework)&quot;&gt;
+        &lt;reference file=&quot;JonjubNet.Metrics.dll&quot; /&gt;
+        &lt;reference file=&quot;JonjubNet.Metrics.Core.dll&quot; /&gt;
+        &lt;reference file=&quot;JonjubNet.Metrics.Shared.dll&quot; /&gt;
+        &lt;reference file=&quot;JonjubNet.Metrics.Prometheus.dll&quot; /&gt;
+        &lt;reference file=&quot;JonjubNet.Metrics.OpenTelemetry.dll&quot; /&gt;
+        &lt;reference file=&quot;JonjubNet.Metrics.InfluxDB.dll&quot; /&gt;
+      &lt;/group&gt;
+    &lt;/references&gt;
+      </_ReferencesSection>
     </PropertyGroup>
     
-    <!-- Buscar paquetes en todas las ubicaciones posibles -->
+    <!-- Leer el contenido del nuspec -->
+    <ReadLinesFromFile File="$(_NuspecFile)" Condition="Exists('$(_NuspecFile)')">
+      <Output TaskParameter="Lines" ItemName="_NuspecLines" />
+    </ReadLinesFromFile>
+    
+    <!-- Crear nuevas líneas insertando referencias antes de </metadata> -->
     <ItemGroup>
-      <_AllPackageFiles Include="$(OutputPath)$(PackageId).*.nupkg" />
-      <_AllPackageFiles Include="$(_PackageOutputPath)$(PackageId).*.nupkg" Condition="'$(_PackageOutputPath)' != ''" />
-      <_AllPackageFiles Include="$(PackageOutputAbsolutePath)$(PackageId).*.nupkg" Condition="'$(PackageOutputAbsolutePath)' != ''" />
-      <!-- También buscar en la ruta de salida del pack cuando se usa output -->
-      <_AllPackageFiles Include="$(MSBuildProjectDirectory)\..\..\packages\$(PackageId).*.nupkg" Condition="Exists('$(MSBuildProjectDirectory)\..\..\packages')" />
+      <_NewNuspecLines Include="@(_NuspecLines)" Condition="'%(Identity)' != '&lt;/metadata&gt;'" />
+      <_NewNuspecLines Include="$(_ReferencesSection)" />
+      <_NewNuspecLines Include="&lt;/metadata&gt;" />
     </ItemGroup>
     
-    <!-- Ejecutar el script para cada paquete encontrado -->
-    <Exec 
-      Condition="'@(_AllPackageFiles)' != '' AND Exists('$(_ScriptPath)')"
-      Command="$(_PowerShellExe) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(_ScriptPath)&quot; -PackageFile &quot;%(_AllPackageFiles.Identity)&quot; -TargetFramework &quot;$(TargetFramework)&quot;"
-      ContinueOnError="false"
-      StandardOutputImportance="normal"
-      StandardErrorImportance="high" />
+    <!-- Escribir el nuspec modificado -->
+    <WriteLinesToFile
+      Condition="Exists('$(_NuspecFile)')"
+      File="$(_NuspecFile)"
+      Lines="@(_NewNuspecLines)"
+      Overwrite="true" />
   </Target>
 
 </Project>
