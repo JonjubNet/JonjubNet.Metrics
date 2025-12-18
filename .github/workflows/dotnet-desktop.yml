@@ -26,6 +26,11 @@ jobs:
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
+    - name: Setup PowerShell Core
+      uses: actions/setup-powershell@v1
+      with:
+        pwsh-version: 'latest'
+
     - name: Restore dependencies
       run: dotnet restore JonjubNet.Metrics.slnx
 

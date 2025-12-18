@@ -8,7 +8,7 @@
     
     <!-- NuGet Package Properties -->
     <PackageId>JonjubNet.Metrics</PackageId>
-    <Version>1.0.13</Version>
+    <Version>1.0.14</Version>
     <Authors>JonjubNet</Authors>
     <Company>JonjubNet</Company>
     <Description>Biblioteca de métricas para aplicaciones .NET con soporte para contadores, gauges, histogramas y timers, integración con Prometheus y exportación a múltiples formatos.</Description>
@@ -121,10 +121,14 @@
   </Target>
   
   <!-- Target CRÍTICO: Agregar referencias explícitas al paquete después de crearlo -->
+  <!-- Multiplataforma: usa pwsh en Linux/Mac y powershell.exe en Windows -->
   <Target Name="AddExplicitReferencesToPackage" AfterTargets="Pack">
     <PropertyGroup>
       <_ScriptPath>$(MSBuildThisFileDirectory)AddReferencesToPackage.ps1</_ScriptPath>
       <_PackageOutputPath Condition="'$(PackageOutputPath)' == ''">$(OutputPath)</_PackageOutputPath>
+      <!-- Detectar PowerShell: pwsh (PowerShell Core) en Linux/Mac, powershell.exe en Windows -->
+      <_PowerShellExe Condition="'$(OS)' == 'Windows_NT'">powershell.exe</_PowerShellExe>
+      <_PowerShellExe Condition="'$(OS)' != 'Windows_NT'">pwsh</_PowerShellExe>
     </PropertyGroup>
     
     <ItemGroup>
@@ -135,7 +139,7 @@
     
     <Exec 
       Condition="'@(_AllPackageFiles)' != '' AND Exists('$(_ScriptPath)')"
-      Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(_ScriptPath)&quot; -PackageFile &quot;%(_AllPackageFiles.Identity)&quot; -TargetFramework &quot;$(TargetFramework)&quot;"
+      Command="$(_PowerShellExe) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(_ScriptPath)&quot; -PackageFile &quot;%(_AllPackageFiles.Identity)&quot; -TargetFramework &quot;$(TargetFramework)&quot;"
       ContinueOnError="false"
       StandardOutputImportance="normal"
       StandardErrorImportance="high" />
