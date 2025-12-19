@@ -38,7 +38,7 @@ using Microsoft.Extensions.Configuration;
 var builder = WebApplication.CreateBuilder(args);
 
 // Agregar métricas
-builder.Services.AddJonjubNetMetrics(builder.Configuration);
+        (builder.Configuration);
 
 var app = builder.Build();
 

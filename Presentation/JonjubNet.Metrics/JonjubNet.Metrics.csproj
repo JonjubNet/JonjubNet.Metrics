@@ -28,16 +28,11 @@
     <!-- Configuración de documentación -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
-    
-    <!-- IMPORTANTE: Incluir ensamblados de proyectos referenciados en el paquete -->
-    <!-- Los ensamblados se incluyen automáticamente cuando se empaqueta -->
-    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeProjectReferencesInPackage</TargetsForTfmSpecificBuildOutput>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
@@ -48,29 +43,28 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Configurar ProjectReference para incluir ensamblados en el paquete sin crear dependencias -->
-    <!-- PrivateAssets="All" evita que se creen dependencias de paquetes -->
-    <!-- Los ensamblados se incluirán físicamente mediante el target IncludeProjectReferencesInPackage -->
-    <!-- Las referencias se agregarán al .nuspec mediante el target AddReferencesToNuspec -->
+    <!-- Configurar ProjectReference para incluir ensamblados en el paquete -->
+    <!-- PrivateAssets="All" evita que se generen como dependencias en el .nuspec -->
+    <!-- ReferenceOutputAssembly="true" permite que se copien al output para compilación -->
     <ProjectReference Include="..\..\Core\JonjubNet.Metrics.Core\JonjubNet.Metrics.Core.csproj">
-      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
+      <PrivateAssets>All</PrivateAssets>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.Shared\JonjubNet.Metrics.Shared.csproj">
-      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
+      <PrivateAssets>All</PrivateAssets>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.Prometheus\JonjubNet.Metrics.Prometheus.csproj">
-      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
+      <PrivateAssets>All</PrivateAssets>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.OpenTelemetry\JonjubNet.Metrics.OpenTelemetry.csproj">
-      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
+      <PrivateAssets>All</PrivateAssets>
     </ProjectReference>
     <ProjectReference Include="..\..\Infrastructure\JonjubNet.Metrics.InfluxDB\JonjubNet.Metrics.InfluxDB.csproj">
-      <PrivateAssets>All</PrivateAssets>
       <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
+      <PrivateAssets>All</PrivateAssets>
     </ProjectReference>
   </ItemGroup>
 
@@ -80,48 +74,28 @@
     <None Include="icon.png" Pack="true" PackagePath="" />
   </ItemGroup>
 
-  <!-- Excluir archivos de ejemplo de la compilación -->
-  <ItemGroup>
-    <Compile Remove="Examples\**" />
-    <EmbeddedResource Remove="Examples\**" />
-  </ItemGroup>
+  <!-- Configurar para incluir ensamblados de proyectos referenciados en el paquete -->
+  <PropertyGroup>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
 
-  <!-- Target para incluir ensamblados de proyectos referenciados en el paquete -->
-  <!-- Esto asegura que los ensamblados se incluyan como referencias en el paquete NuGet -->
-  <Target Name="IncludeProjectReferencesInPackage" BeforeTargets="_GetPackageFiles" Condition="'$(NoBuild)' != 'true'">
-    <ItemGroup>
-      <!-- Obtener todos los ensamblados de proyectos referenciados desde ReferenceCopyLocalPaths -->
-      <_ProjectRefAssemblies Include="@(ReferenceCopyLocalPaths-&gt;WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
-    </ItemGroup>
+  <Target Name="CopyProjectReferencesToPackage">
+    <!-- Obtener las rutas de salida de los proyectos referenciados -->
+    <MSBuild Projects="@(ProjectReference)" 
+             Targets="GetTargetPath" 
+             Properties="Configuration=$(Configuration);Platform=$(Platform);TargetFramework=$(TargetFramework)"
+             SkipNonexistentTargets="true"
+             ContinueOnError="false">
+      <Output TaskParameter="TargetOutputs" ItemName="_ReferencedProjectOutputs" />
+    </MSBuild>
     
-    <!-- Agregar como TfmSpecificBuildOutput para que se incluyan en lib/$(TargetFramework)/ -->
+    <!-- Agregar los ensamblados al paquete -->
     <ItemGroup>
-      <TfmSpecificBuildOutput Include="@(_ProjectRefAssemblies)" />
+      <TfmSpecificPackageFile Include="@(_ReferencedProjectOutputs)" Condition="Exists('%(FullPath)') AND '%(Filename)' != '$(AssemblyName)'">
+        <PackagePath>lib/$(TargetFramework)/%(Filename)%(Extension)</PackagePath>
+      </TfmSpecificPackageFile>
     </ItemGroup>
   </Target>
-  
-  <!-- Target alternativo para no-build: incluir archivos ya compilados -->
-  <Target Name="IncludeProjectReferencesInPackageNoBuild" BeforeTargets="_GetPackageFiles" Condition="'$(NoBuild)' == 'true'">
-    <ItemGroup>
-      <!-- Incluir DLLs de proyectos referenciados desde sus carpetas de output -->
-      <_ProjectRefDlls Include="@(ProjectReference->'%(RootDir)%(Directory)bin\$(Configuration)\$(TargetFramework)\%(Filename).dll')" />
-      <_ProjectRefPdbs Include="@(ProjectReference->'%(RootDir)%(Directory)bin\$(Configuration)\$(TargetFramework)\%(Filename).pdb')" Condition="'$(IncludeSymbols)' == 'true'" />
-    </ItemGroup>
-    
-    <!-- Filtrar solo los archivos que existen -->
-    <ItemGroup>
-      <_ExistingDlls Include="@(_ProjectRefDlls)" Condition="Exists('%(Identity)')" />
-      <_ExistingPdbs Include="@(_ProjectRefPdbs)" Condition="Exists('%(Identity)')" />
-    </ItemGroup>
-    
-    <!-- Incluir en el paquete usando TfmSpecificBuildOutput para que se reconozcan como referencias -->
-    <ItemGroup>
-      <TfmSpecificBuildOutput Include="@(_ExistingDlls)" />
-      <TfmSpecificBuildOutput Include="@(_ExistingPdbs)" Condition="'$(IncludeSymbols)' == 'true'" />
-    </ItemGroup>
-  </Target>
-  
-  <!-- Importar target para agregar referencias al .nuspec -->
-  <Import Project="AddReferences.targets" />
+
 
 </Project>
